@@ -1,3 +1,18 @@
 spring:
   application:
     name: dlq_streaming
+
+dlq-drain:
+  receiver:
+    type: in-memory
+    data-prepper:
+      url: http://localhost:2021/log/ingest
+  scheduler:
+    enabled: false
+    batch-size: 100
+    worker-id: dlq-drain-worker
+    lease-seconds: 120
+    release-expired-leases: true
+    fixed-delay-millis: 30000
+    initial-delay-millis: 5000
+
