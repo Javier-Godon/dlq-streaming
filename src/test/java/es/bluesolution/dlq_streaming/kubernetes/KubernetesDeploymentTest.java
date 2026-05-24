@@ -829,7 +829,34 @@ class KubernetesDeploymentTest {
      * {@code ctr} binary (from containerd) requires this socket path explicitly.
      * Using {@code k3s ctr} is not valid — {@code ctr} is not a k3s sub-command.
      */
+    /**
+     * Ensures the application Docker image {@value APP_IMAGE} exists locally,
+     * building it from the project Dockerfile if necessary, then loads it into k3s.
+     *
+     * <p>This method is self-contained: it never attempts a registry pull for the
+     * application image (which is a locally-built image with no registry backing).
+     */
     private static void loadAppImageIntoK3s() throws Exception {
+        boolean locallyAvailable = runProcess(
+                List.of("docker", "image", "inspect", "--format", "{{.Id}}", APP_IMAGE),
+                "docker image inspect " + APP_IMAGE
+        ) == 0;
+
+        if (!locallyAvailable) {
+            log.info("Image '{}' not found locally — building from Dockerfile...", APP_IMAGE);
+            // Locate project root (directory containing pom.xml).
+            File projectRoot = new File(System.getProperty("user.dir"));
+            int buildRc = runProcess(
+                    List.of("docker", "build", "-t", APP_IMAGE, projectRoot.getAbsolutePath()),
+                    "docker build -t " + APP_IMAGE
+            );
+            if (buildRc != 0) {
+                throw new IllegalStateException("docker build failed for image: " + APP_IMAGE);
+            }
+        } else {
+            log.debug("Image '{}' already available locally — skipping build.", APP_IMAGE);
+        }
+
         loadImageIntoK3s(APP_IMAGE);
     }
 

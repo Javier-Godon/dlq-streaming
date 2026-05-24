@@ -21,8 +21,11 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 
+import static es.bluesolution.dlq_streaming.functional_framework.FailureResultDescription.ErrorCode.DATABASE_ERROR;
 import static es.bluesolution.dlq_streaming.functional_framework.FailureResultDescription.ErrorCode.EXTERNAL_SERVICE_ERROR;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 
 class DrainDeadLettersHandlerTest {
     private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-05-23T10:15:30Z"), ZoneOffset.UTC);
@@ -58,8 +61,8 @@ class DrainDeadLettersHandlerTest {
     @Test
     void writesThenDeletesEveryClaimedRecord() {
         var records = List.of(
-                record("product-1_2026-05-23T10:15:30Z"),
-                record("product-2_2026-05-23T10:16:30Z"));
+                buildRecord("product-1_2026-05-23T10:15:30Z"),
+                buildRecord("product-2_2026-05-23T10:16:30Z"));
         var repository = new FakeDeadLetterRepository(records);
         var writer = new FakeDeadLetterReceiver(-1);
         var handler = handler(repository, writer);
@@ -80,11 +83,47 @@ class DrainDeadLettersHandlerTest {
     }
 
     @Test
+    void propagatesDbFailureFromClaimBatch() {
+        var repository = org.mockito.Mockito.mock(DeadLetterRepository.class);
+        when(repository.releaseExpiredLeases(any())).thenReturn(Result.success(0));
+        when(repository.claimNextBatch(any(), any(), any(), any()))
+                .thenReturn(Result.failure(DATABASE_ERROR, "Connection pool exhausted", null));
+        var handler = handler(repository, new FakeDeadLetterReceiver(-1));
+
+        var result = handler.handle(new DrainDeadLettersCommand(100, "worker-a", 60, true));
+
+        assertThat(result.isFailure()).isTrue();
+        assertThat(result.failure().message()).isEqualTo("Connection pool exhausted");
+    }
+
+    @Test
+    void propagatesDbFailureFromDeleteClaimed() {
+        // Receiver accepts the record, but the DB delete fails.
+        // The record remains in PROCESSING state and will be retried after lease expiry.
+        var records = List.of(buildRecord("product-1_2026-05-23T10:15:30Z"));
+        var repository = org.mockito.Mockito.mock(DeadLetterRepository.class);
+        when(repository.releaseExpiredLeases(any())).thenReturn(Result.success(0));
+        when(repository.claimNextBatch(any(), any(), any(), any())).thenReturn(Result.success(records));
+        when(repository.deleteClaimed(any(), any()))
+                .thenReturn(Result.failure(DATABASE_ERROR, "Row lock contention", null));
+        var writer = new FakeDeadLetterReceiver(-1);
+        var handler = handler(repository, writer);
+
+        var result = handler.handle(new DrainDeadLettersCommand(100, "worker-a", 60, false));
+
+        assertThat(result.isFailure()).isTrue();
+        assertThat(result.failure().message()).isEqualTo("Row lock contention");
+        // Although the delete failed, the receiver still received the record.
+        // The record will remain PROCESSING until lease expires and be retried.
+        assertThat(writer.writtenProcessIds).containsExactly("product-1_2026-05-23T10:15:30Z");
+    }
+
+    @Test
     void stopsImmediatelyAndSkipsDeleteWhenPrimaryWriteFails() {
         var records = List.of(
-                record("product-1_2026-05-23T10:15:30Z"),
-                record("product-2_2026-05-23T10:16:30Z"),
-                record("product-3_2026-05-23T10:17:30Z"));
+                buildRecord("product-1_2026-05-23T10:15:30Z"),
+                buildRecord("product-2_2026-05-23T10:16:30Z"),
+                buildRecord("product-3_2026-05-23T10:17:30Z"));
         var repository = new FakeDeadLetterRepository(records);
         var writer = new FakeDeadLetterReceiver(2);
         var handler = handler(repository, writer);
@@ -108,7 +147,7 @@ class DrainDeadLettersHandlerTest {
         return new DrainDeadLettersHandler(repository, writer, new NoOpExecutionContext(), FIXED_CLOCK);
     }
 
-    private static DeadLetterRecord record(String processId) {
+    private static DeadLetterRecord buildRecord(String processId) {
         return DeadLetterRecord.create(
                 ProcessId.create(processId).value(),
                 DeadLetterOccurredAt.create(Instant.parse("2026-05-23T10:00:00Z")).value(),

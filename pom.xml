@@ -1,340 +1,485 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-	<modelVersion>4.0.0</modelVersion>
-	<parent>
-		<groupId>org.springframework.boot</groupId>
-		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>4.1.0-RC1</version>
-		<relativePath/> <!-- lookup parent from repository -->
-	</parent>
-	<groupId>es.bluesolution</groupId>
-	<artifactId>dlq_streaming</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
-	<name/>
-	<description/>
-	<url/>
-	<licenses>
-		<license/>
-	</licenses>
-	<developers>
-		<developer/>
-	</developers>
-	<scm>
-		<connection/>
-		<developerConnection/>
-		<tag/>
-		<url/>
-	</scm>
-	<properties>
-		<java.version>25</java.version>
-		<lombok.version>1.18.42</lombok.version>
-		<cucumber.version>7.30.0</cucumber.version>
-		<testcontainers.version>1.21.3</testcontainers.version>
-	</properties>
-	<dependencies>
-		<!-- JDBC: JdbcClient, DataSourceTransactionManager, HikariCP -->
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-jdbc</artifactId>
-		</dependency>
-		<!-- Flyway migrations -->
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-flyway</artifactId>
-		</dependency>
-		<!-- Flyway PostgreSQL dialect support -->
-		<dependency>
-			<groupId>org.flywaydb</groupId>
-			<artifactId>flyway-database-postgresql</artifactId>
-		</dependency>
-		<!-- Spring Web: RestClient for outgoing HTTP to Data Prepper receiver -->
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-webmvc</artifactId>
-		</dependency>
-		<!-- PostgreSQL JDBC driver -->
-		<dependency>
-			<groupId>org.postgresql</groupId>
-			<artifactId>postgresql</artifactId>
-			<scope>runtime</scope>
-		</dependency>
-		<!-- Lombok: @Slf4j and other code generation -->
-		<dependency>
-			<groupId>org.projectlombok</groupId>
-			<artifactId>lombok</artifactId>
-			<version>${lombok.version}</version>
-			<optional>true</optional>
-		</dependency>
-                <!-- JSpecify: @Nullable annotations -->
-                <dependency>
-                        <groupId>org.jspecify</groupId>
-                        <artifactId>jspecify</artifactId>
-                        <version>1.0.0</version>
-                </dependency>
-                <!-- Actuator: health, info, and metrics endpoints -->
-                <dependency>
-                        <groupId>org.springframework.boot</groupId>
-                        <artifactId>spring-boot-starter-actuator</artifactId>
-                </dependency>
-                <!-- Micrometer Prometheus registry: exposes /actuator/prometheus for
-                     Kubernetes PodMonitor / ServiceMonitor scraping.
-                     Without this dependency the endpoint returns 404 even when listed
-                     in management.endpoints.web.exposure.include. -->
-                <dependency>
-                        <groupId>io.micrometer</groupId>
-                        <artifactId>micrometer-registry-prometheus</artifactId>
-                </dependency>
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.1.0-RC1</version>
+        <relativePath/> <!-- lookup parent from repository -->
+    </parent>
+    <groupId>es.bluesolution</groupId>
+    <artifactId>dlq_streaming</artifactId>
+    <version>1.0.0</version>
+    <name/>
+    <description/>
+    <url/>
+    <licenses>
+        <license/>
+    </licenses>
+    <developers>
+        <developer/>
+    </developers>
+    <scm>
+        <connection/>
+        <developerConnection/>
+        <tag/>
+        <url/>
+    </scm>
+    <properties>
+        <java.version>25</java.version>
+        <lombok.version>1.18.42</lombok.version>
+        <cucumber.version>7.30.0</cucumber.version>
+        <testcontainers.version>1.21.3</testcontainers.version>
+    </properties>
+    <dependencies>
+        <!-- JDBC: JdbcClient, DataSourceTransactionManager, HikariCP -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+        <!-- Flyway migrations -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-flyway</artifactId>
+        </dependency>
+        <!-- Flyway PostgreSQL dialect support -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+        <!-- Spring Web: RestClient for outgoing HTTP to Data Prepper receiver -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc</artifactId>
+        </dependency>
+        <!-- PostgreSQL JDBC driver -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- Lombok: @Slf4j and other code generation -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>${lombok.version}</version>
+            <optional>true</optional>
+        </dependency>
+        <!-- JSpecify: @Nullable annotations -->
+        <dependency>
+            <groupId>org.jspecify</groupId>
+            <artifactId>jspecify</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+        <!-- Actuator: health, info, and metrics endpoints -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <!-- Micrometer Prometheus registry: exposes /actuator/prometheus for
+             Kubernetes PodMonitor / ServiceMonitor scraping.
+             Without this dependency the endpoint returns 404 even when listed
+             in management.endpoints.web.exposure.include. -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
 
-		<!-- Test: JUnit 5, AssertJ, Mockito, spring-test (MockRestServiceServer), @SpringBootTest -->
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-test</artifactId>
-			<scope>test</scope>
-		</dependency>
-		<!-- Testcontainers JUnit 5 integration -->
-		<dependency>
-			<groupId>org.testcontainers</groupId>
-			<artifactId>junit-jupiter</artifactId>
-			<version>${testcontainers.version}</version>
-			<scope>test</scope>
-		</dependency>
-                <!-- Testcontainers PostgreSQL module -->
-                <dependency>
-                        <groupId>org.testcontainers</groupId>
-                        <artifactId>postgresql</artifactId>
-                        <version>${testcontainers.version}</version>
-                        <scope>test</scope>
-                </dependency>
-                <!-- Testcontainers Toxiproxy: network chaos / fault injection in tests -->
-                <dependency>
-                        <groupId>org.testcontainers</groupId>
-                        <artifactId>toxiproxy</artifactId>
-                        <version>${testcontainers.version}</version>
-                        <scope>test</scope>
-                </dependency>
-                <!-- WireMock: HTTP server stub for chaos and receiver tests (Jetty 12 / Java 21+) -->
-                <dependency>
-                        <groupId>org.wiremock</groupId>
-                        <artifactId>wiremock-standalone</artifactId>
-                        <version>3.9.2</version>
-                        <scope>test</scope>
-                </dependency>
-                <!-- Testcontainers k3s: lightweight K8s cluster for deployment tests -->
-                <dependency>
-                        <groupId>org.testcontainers</groupId>
-                        <artifactId>k3s</artifactId>
-                        <version>${testcontainers.version}</version>
-                        <scope>test</scope>
-                </dependency>
-                <!-- Awaitility: fluent async assertions used in Kubernetes deployment tests -->
-                <dependency>
-                        <groupId>org.awaitility</groupId>
-                        <artifactId>awaitility</artifactId>
-                        <scope>test</scope>
-                </dependency>
-                <!-- Fabric8 Kubernetes Client: apply manifests and assert cluster state -->
-                <dependency>
-                        <groupId>io.fabric8</groupId>
-                        <artifactId>kubernetes-client</artifactId>
-                        <version>7.2.0</version>
-                        <scope>test</scope>
-                </dependency>
-		<!-- Cucumber BDD: step definitions and feature file runner -->
-		<dependency>
-			<groupId>io.cucumber</groupId>
-			<artifactId>cucumber-java</artifactId>
-			<version>${cucumber.version}</version>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>io.cucumber</groupId>
-			<artifactId>cucumber-junit-platform-engine</artifactId>
-			<version>${cucumber.version}</version>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.junit.platform</groupId>
-			<artifactId>junit-platform-suite</artifactId>
-			<scope>test</scope>
-		</dependency>
-	</dependencies>
+        <!-- Test: JUnit 5, AssertJ, Mockito, spring-test (MockRestServiceServer), @SpringBootTest -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Testcontainers JUnit 5 integration -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${testcontainers.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Testcontainers PostgreSQL module -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>${testcontainers.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Testcontainers Toxiproxy: network chaos / fault injection in tests -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>toxiproxy</artifactId>
+            <version>${testcontainers.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- WireMock: HTTP server stub for chaos and receiver tests (Jetty 12 / Java 21+) -->
+        <dependency>
+            <groupId>org.wiremock</groupId>
+            <artifactId>wiremock-standalone</artifactId>
+            <version>3.9.2</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Testcontainers k3s: lightweight K8s cluster for deployment tests -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>k3s</artifactId>
+            <version>${testcontainers.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Awaitility: fluent async assertions used in Kubernetes deployment tests -->
+        <dependency>
+            <groupId>org.awaitility</groupId>
+            <artifactId>awaitility</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Fabric8 Kubernetes Client: apply manifests and assert cluster state -->
+        <dependency>
+            <groupId>io.fabric8</groupId>
+            <artifactId>kubernetes-client</artifactId>
+            <version>7.2.0</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Cucumber BDD: step definitions and feature file runner -->
+        <dependency>
+            <groupId>io.cucumber</groupId>
+            <artifactId>cucumber-java</artifactId>
+            <version>${cucumber.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.cucumber</groupId>
+            <artifactId>cucumber-junit-platform-engine</artifactId>
+            <version>${cucumber.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-suite</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
 
-	<build>
+    <build>
         <plugins>
-                        <plugin>
-                                <groupId>org.apache.maven.plugins</groupId>
-                                <artifactId>maven-compiler-plugin</artifactId>
-                                <configuration>
-                                        <proc>full</proc>
-                                        <annotationProcessorPaths>
-                                                <path>
-                                                        <groupId>org.projectlombok</groupId>
-                                                        <artifactId>lombok</artifactId>
-                                                        <version>${lombok.version}</version>
-                                                </path>
-                                        </annotationProcessorPaths>
-                                </configuration>
-                        </plugin>
-                        <plugin>
-                                <groupId>org.springframework.boot</groupId>
-                                <artifactId>spring-boot-maven-plugin</artifactId>
-                        </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <proc>full</proc>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <!--
+                 Exclude heavyweight tests from the default `./mvnw test` run.
+                 E2E and Kubernetes tests must be activated via profiles.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>**/e2e/**</exclude>
+                        <exclude>**/kubernetes/**</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+            <!--
+                 JaCoCo: line/branch coverage report and minimum threshold.
+                 Report is generated at: target/site/jacoco/index.html
+                 Threshold: 90% instruction coverage on the entire module
+                 (excluding infrastructure config, package-info, and generated main class).
+            -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.13</version>
+                <configuration>
+                    <excludes>
+                        <!-- Spring Boot entry point — not unit-testable -->
+                        <exclude>es/bluesolution/dlq_streaming/DlqStreamingApplication.class</exclude>
+                        <!-- package-info files have no executable code -->
+                        <exclude>es/bluesolution/dlq_streaming/functional_framework/package-info.class</exclude>
                         <!--
-                             Exclude heavyweight tests from the default `./mvnw test` run.
-                             E2E and Kubernetes tests must be activated via profiles.
+                             Framework capabilities bundled for reuse by other services.
+                             Not used by the DLQ drain business logic in this service.
+                             Each has its own documented use-cases in a multi-bounded-context project.
                         -->
-                        <plugin>
-                                <groupId>org.apache.maven.plugins</groupId>
-                                <artifactId>maven-surefire-plugin</artifactId>
-                                <configuration>
-                                        <excludes>
-                                                <exclude>**/e2e/**</exclude>
-                                                <exclude>**/kubernetes/**</exclude>
-                                        </excludes>
-                                </configuration>
-                        </plugin>
+                        <!-- Saga pattern (distributed compensation transactions) -->
+                        <exclude>
+                            es/bluesolution/dlq_streaming/functional_framework/execution/SagaExecutionContext.class
+                        </exclude>
+                        <exclude>es/bluesolution/dlq_streaming/functional_framework/execution/SagaAggregator.class
+                        </exclude>
+                        <!-- Outbox pattern (reliable async event publishing) -->
+                        <exclude>
+                            es/bluesolution/dlq_streaming/functional_framework/execution/OutboxExecutionContext.class
+                        </exclude>
+                        <exclude>es/bluesolution/dlq_streaming/functional_framework/execution/OutboxAggregator.class
+                        </exclude>
+                        <exclude>es/bluesolution/dlq_streaming/functional_framework/execution/OutboxAggregator$*.class
+                        </exclude>
+                        <!--
+                             RailwayResponseBuilder and its supporting classes provide a generic
+                             HTTP response builder for controllers in multi-bounded-context projects.
+                             The TriggerDrainController uses its own explicit status mapping — these
+                             classes are not invoked by DLQ drain endpoints.
+                        -->
+                        <exclude>es/bluesolution/dlq_streaming/functional_framework/RailwayResponseBuilder.class
+                        </exclude>
+                        <exclude>es/bluesolution/dlq_streaming/functional_framework/RailwayErrorHandlingConfig.class
+                        </exclude>
+                        <exclude>es/bluesolution/dlq_streaming/functional_framework/RailwayErrorHandlingConfig$*.class
+                        </exclude>
+                        <!--
+                             RailwayErrorResponseBuilder and ErrorMessageFormatter are
+                             Spring MVC error-response rendering utilities bundled for
+                             multi-bounded-context projects. The DLQ drain controller
+                             maps errors explicitly without using these classes.
+                        -->
+                        <exclude>es/bluesolution/dlq_streaming/functional_framework/RailwayErrorResponseBuilder.class
+                        </exclude>
+                        <exclude>
+                            es/bluesolution/dlq_streaming/functional_framework/RailwayErrorResponseBuilder$*.class
+                        </exclude>
+                        <exclude>es/bluesolution/dlq_streaming/functional_framework/ErrorMessageFormatter.class
+                        </exclude>
+                        <!--
+                             DlqDrainInfrastructureConfig is a Spring @Configuration class
+                             that wires beans (DataSource, JdbcTemplate, etc.). Spring beans
+                             are exercised in integration tests (Testcontainers / @SpringBootTest)
+                             not in the default unit-test suite.
+                        -->
+                        <exclude>
+                            es/bluesolution/dlq_streaming/dlq_drain/shared/infrastructure/DlqDrainInfrastructureConfig.class
+                        </exclude>
+                        <exclude>
+                            es/bluesolution/dlq_streaming/dlq_drain/shared/infrastructure/DlqDrainInfrastructureConfig$*.class
+                        </exclude>
+                        <!--
+                             ExecutionContext implementations not used by DLQ drain.
+                             TransactionExecutionContext, LoggingExecutionContext, and
+                             ComposableExecutionContext are framework building blocks for
+                             other bounded contexts. DLQ drain uses NoOpExecutionContext.
+                        -->
+                        <exclude>
+                            es/bluesolution/dlq_streaming/functional_framework/execution/TransactionExecutionContext.class
+                        </exclude>
+                        <exclude>
+                            es/bluesolution/dlq_streaming/functional_framework/execution/LoggingExecutionContext.class
+                        </exclude>
+                        <exclude>
+                            es/bluesolution/dlq_streaming/functional_framework/execution/ComposableExecutionContext.class
+                        </exclude>
+                        <!--
+                             ResultFailures, ExceptionToErrorCodeMapper, HttpStatusMapper,
+                             and ErrorResponse are HTTP error-mapping utilities for REST
+                             controllers in multi-bounded-context projects. Not used by
+                             the DLQ drain trigger endpoint which maps errors explicitly.
+                        -->
+                        <exclude>es/bluesolution/dlq_streaming/functional_framework/ResultFailures.class</exclude>
+                        <exclude>es/bluesolution/dlq_streaming/functional_framework/ExceptionToErrorCodeMapper.class
+                        </exclude>
+                        <exclude>es/bluesolution/dlq_streaming/functional_framework/HttpStatusMapper.class</exclude>
+                        <exclude>es/bluesolution/dlq_streaming/functional_framework/ErrorResponse.class</exclude>
+                    </excludes>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>check</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>INSTRUCTION</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.85</minimum>
+                                        </limit>
+                                        <limit>
+                                            <counter>BRANCH</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.80</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <profile>
+            <id>acceptance-tests</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <includes>
+                                <include>**/*CucumberTest.java</include>
+                            </includes>
+                        </configuration>
+                    </plugin>
                 </plugins>
-	</build>
+            </build>
+        </profile>
 
-	<profiles>
-		<profile>
-			<id>acceptance-tests</id>
-			<build>
-				<plugins>
-					<plugin>
-						<groupId>org.apache.maven.plugins</groupId>
-						<artifactId>maven-surefire-plugin</artifactId>
-						<configuration>
-							<includes>
-								<include>**/*CucumberTest.java</include>
-							</includes>
-						</configuration>
-					</plugin>
-				</plugins>
-			</build>
-		</profile>
+        <profile>
+            <!--
+                 Kubernetes deployment tests using Testcontainers k3s.
 
-                <profile>
-                        <!--
-                             Kubernetes deployment tests using Testcontainers k3s.
+                 Prerequisites (handled by the profile automatically):
+                   1. Docker daemon must be running.
+                   2. The profile runs `package` first to produce the fat JAR.
+                   3. Then `docker build -t dlq-streaming:k8s-test .` is executed
+                      via the exec-maven-plugin before the test phase.
 
-                             Prerequisites (handled by the profile automatically):
-                               1. Docker daemon must be running.
-                               2. The profile runs `package` first to produce the fat JAR.
-                               3. Then `docker build -t dlq-streaming:k8s-test .` is executed
-                                  via the exec-maven-plugin before the test phase.
+                 Usage:
+                   ./mvnw test -Pkubernetes-tests
+            -->
+            <id>kubernetes-tests</id>
+            <build>
+                <plugins>
+                    <!-- Step 1: ensure the fat JAR is built -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <includes>
+                                <include>**/kubernetes/**Test.java</include>
+                            </includes>
+                            <!-- Clear the main-build exclusion of **/kubernetes/**
+                                 so this profile can run those tests. -->
+                            <excludes combine.self="override"/>
+                            <!-- JUnit 5 tag selector: only run @Tag("kubernetes") tests -->
+                            <groups>kubernetes</groups>
+                        </configuration>
+                    </plugin>
+                    <!-- Step 2: build the Docker image before tests run -->
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.5.0</version>
+                        <executions>
+                            <!-- Step 2a: prune dangling images from the PREVIOUS test run
+                                 so stale <none>:<none> layers do not accumulate. -->
+                            <execution>
+                                <id>docker-prune-dangling-before-build</id>
+                                <phase>test-compile</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>docker</executable>
+                                    <arguments>
+                                        <argument>image</argument>
+                                        <argument>prune</argument>
+                                        <argument>-f</argument>
+                                    </arguments>
+                                    <!-- Pruning is best-effort; never fail the build. -->
+                                    <successCodes>
+                                        <successCode>0</successCode>
+                                        <successCode>1</successCode>
+                                    </successCodes>
+                                </configuration>
+                            </execution>
+                            <!-- Step 2b: build the test image (overwrites the previous tag). -->
+                            <execution>
+                                <id>docker-build-k8s-test-image</id>
+                                <phase>test-compile</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>docker</executable>
+                                    <arguments>
+                                        <argument>build</argument>
+                                        <argument>--build-arg</argument>
+                                        <argument>BUILDKIT_INLINE_CACHE=1</argument>
+                                        <argument>-t</argument>
+                                        <argument>dlq-streaming:k8s-test</argument>
+                                        <argument>.</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
 
-                             Usage:
-                               ./mvnw test -Pkubernetes-tests
-                        -->
-                        <id>kubernetes-tests</id>
-                        <build>
-                                <plugins>
-                                        <!-- Step 1: ensure the fat JAR is built -->
-                                        <plugin>
-                                                <groupId>org.apache.maven.plugins</groupId>
-                                                <artifactId>maven-surefire-plugin</artifactId>
-                                                <configuration>
-                                                        <includes>
-                                                                <include>**/kubernetes/**Test.java</include>
-                                                        </includes>
-                                                        <!-- Clear the main-build exclusion of **/kubernetes/**
-                                                             so this profile can run those tests. -->
-                                                        <excludes combine.self="override"/>
-                                                        <!-- JUnit 5 tag selector: only run @Tag("kubernetes") tests -->
-                                                        <groups>kubernetes</groups>
-                                                </configuration>
-                                        </plugin>
-                                        <!-- Step 2: build the Docker image before tests run -->
-                                        <plugin>
-                                                <groupId>org.codehaus.mojo</groupId>
-                                                <artifactId>exec-maven-plugin</artifactId>
-                                                <version>3.5.0</version>
-                                                <executions>
-                                                        <!-- Step 2a: prune dangling images from the PREVIOUS test run
-                                                             so stale <none>:<none> layers do not accumulate. -->
-                                                        <execution>
-                                                                <id>docker-prune-dangling-before-build</id>
-                                                                <phase>test-compile</phase>
-                                                                <goals>
-                                                                        <goal>exec</goal>
-                                                                </goals>
-                                                                <configuration>
-                                                                        <executable>docker</executable>
-                                                                        <arguments>
-                                                                                <argument>image</argument>
-                                                                                <argument>prune</argument>
-                                                                                <argument>-f</argument>
-                                                                        </arguments>
-                                                                        <!-- Pruning is best-effort; never fail the build. -->
-                                                                        <successCodes>
-                                                                                <successCode>0</successCode>
-                                                                                <successCode>1</successCode>
-                                                                        </successCodes>
-                                                                </configuration>
-                                                        </execution>
-                                                        <!-- Step 2b: build the test image (overwrites the previous tag). -->
-                                                        <execution>
-                                                                <id>docker-build-k8s-test-image</id>
-                                                                <phase>test-compile</phase>
-                                                                <goals>
-                                                                        <goal>exec</goal>
-                                                                </goals>
-                                                                <configuration>
-                                                                        <executable>docker</executable>
-                                                                        <arguments>
-                                                                                <argument>build</argument>
-                                                                                <argument>--build-arg</argument>
-                                                                                <argument>BUILDKIT_INLINE_CACHE=1</argument>
-                                                                                <argument>-t</argument>
-                                                                                <argument>dlq-streaming:k8s-test</argument>
-                                                                                <argument>.</argument>
-                                                                        </arguments>
-                                                                </configuration>
-                                                        </execution>
-                                                </executions>
-                                        </plugin>
-                                </plugins>
-                        </build>
-                </profile>
-
-                <profile>
-                        <id>e2e-tests</id>
-			<build>
-				<plugins>
-					<plugin>
-						<groupId>org.apache.maven.plugins</groupId>
-						<artifactId>maven-surefire-plugin</artifactId>
-						<configuration>
-							<excludes>
-								<exclude>**/*E2E.java</exclude>
-							</excludes>
-						</configuration>
-					</plugin>
-					<plugin>
-						<groupId>org.apache.maven.plugins</groupId>
-						<artifactId>maven-failsafe-plugin</artifactId>
-						<configuration>
-							<includes>
-								<include>**/*E2E.java</include>
-							</includes>
-							<systemPropertyVariables>
-								<dlq.e2e.enabled>true</dlq.e2e.enabled>
-							</systemPropertyVariables>
-						</configuration>
-						<executions>
-							<execution>
-								<goals>
-									<goal>integration-test</goal>
-									<goal>verify</goal>
-								</goals>
-							</execution>
-						</executions>
-					</plugin>
-				</plugins>
-			</build>
-		</profile>
-	</profiles>
+        <profile>
+            <id>e2e-tests</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <excludes>
+                                <!-- E2E tests run through failsafe, not surefire. -->
+                                <exclude>**/*E2E.java</exclude>
+                                <!-- Kubernetes tests are opt-in via the kubernetes-tests profile. -->
+                                <exclude>**/kubernetes/**</exclude>
+                            </excludes>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <configuration>
+                            <includes>
+                                <include>**/*E2E.java</include>
+                            </includes>
+                            <systemPropertyVariables>
+                                <dlq.e2e.enabled>true</dlq.e2e.enabled>
+                            </systemPropertyVariables>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <goals>
+                                    <goal>integration-test</goal>
+                                    <goal>verify</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 
 </project>

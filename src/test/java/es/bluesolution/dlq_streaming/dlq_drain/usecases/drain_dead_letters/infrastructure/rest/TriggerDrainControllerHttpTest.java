@@ -13,6 +13,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import java.util.Optional;
 
 import static es.bluesolution.dlq_streaming.functional_framework.FailureResultDescription.ErrorCode.DATABASE_ERROR;
+import static es.bluesolution.dlq_streaming.functional_framework.FailureResultDescription.ErrorCode.VALIDATION_ERROR;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -87,6 +88,15 @@ class TriggerDrainControllerHttpTest {
 
         mockMvc.perform(post("/drain/trigger"))
                 .andExpect(status().isInternalServerError());
+    }
+
+    @Test
+    void postTriggerReturns400WhenValidationFails() throws Exception {
+        when(handler.handle(any())).thenReturn(
+                Result.failure(VALIDATION_ERROR, "DrainBatchSize must be greater than zero", null));
+
+        mockMvc.perform(post("/drain/trigger"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

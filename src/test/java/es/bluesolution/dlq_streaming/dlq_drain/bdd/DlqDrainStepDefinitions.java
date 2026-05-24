@@ -45,7 +45,12 @@ public class DlqDrainStepDefinitions {
 
     @Given("the dead-letter table has pending records")
     public void theDeadLetterTableHasPendingRecords(DataTable dataTable) {
-        dataTable.asMaps().forEach(row -> repository.records.add(record(row.get("processId"))));
+        dataTable.asMaps().forEach(row -> repository.records.add(buildRecord(row.get("processId"))));
+    }
+
+    @Given("the dead-letter table is empty")
+    public void theDeadLetterTableIsEmpty() {
+        // repository.records is already empty after @Before reset — nothing to do
     }
 
     @Given("the receiver accepts every record")
@@ -91,7 +96,7 @@ public class DlqDrainStepDefinitions {
         assertThat(result.value().lastProcessedProcessId()).contains(processId);
     }
 
-    private static DeadLetterRecord record(String processId) {
+    private static DeadLetterRecord buildRecord(String processId) {
         return DeadLetterRecord.create(
                 ProcessId.create(processId).value(),
                 DeadLetterOccurredAt.create(Instant.parse("2026-05-23T10:00:00Z")).value(),

@@ -82,7 +82,7 @@ import static org.awaitility.Awaitility.await;
  * <ul>
  *   <li>{@code POST /__admin/mappings} — register a stub mapping.</li>
  *   <li>{@code POST /__admin/mappings/reset} — reset to initial (empty) state.</li>
- *   <li>{@code POST /__admin/requests/reset} — clear the request journal.</li>
+ *   <li>{@code DELETE /__admin/requests} — clear the request journal (WireMock 3.x).</li>
  *   <li>{@code POST /__admin/requests/count} — count requests matching a pattern.</li>
  *   <li>{@code GET  /__admin/requests} — retrieve recorded request details.</li>
  * </ul>
@@ -199,7 +199,8 @@ class KubernetesDataPrepperTest {
     @BeforeEach
     void resetWireMockState() {
         // Clear recorded (past) requests.
-        wmAdminClient.post().uri("/__admin/requests/reset")
+        // WireMock 3.x replaced POST /__admin/requests/reset with DELETE /__admin/requests.
+        wmAdminClient.delete().uri("/__admin/requests")
                 .retrieve().toBodilessEntity();
         // Wipe all dynamic stubs.
         wmAdminClient.post().uri("/__admin/mappings/reset")
@@ -491,7 +492,30 @@ class KubernetesDataPrepperTest {
 
     // ── Image helpers (duplicated from KubernetesDeploymentTest for self-containment) ──
 
+    /**
+     * Ensures the application Docker image {@value APP_IMAGE} exists locally,
+     * building it from the project Dockerfile if necessary, then loads it into k3s.
+     */
     private static void loadAppImageIntoK3s() throws Exception {
+        boolean locallyAvailable = runProcess(
+                List.of("docker", "image", "inspect", "--format", "{{.Id}}", APP_IMAGE),
+                "docker image inspect " + APP_IMAGE
+        ) == 0;
+
+        if (!locallyAvailable) {
+            log.info("Image '{}' not found locally — building from Dockerfile...", APP_IMAGE);
+            File projectRoot = new File(System.getProperty("user.dir"));
+            int buildRc = runProcess(
+                    List.of("docker", "build", "-t", APP_IMAGE, projectRoot.getAbsolutePath()),
+                    "docker build -t " + APP_IMAGE
+            );
+            if (buildRc != 0) {
+                throw new IllegalStateException("docker build failed for image: " + APP_IMAGE);
+            }
+        } else {
+            log.debug("Image '{}' already available locally — skipping build.", APP_IMAGE);
+        }
+
         loadImageIntoK3s(APP_IMAGE);
     }
 

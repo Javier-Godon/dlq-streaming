@@ -15,6 +15,7 @@ import org.springframework.http.HttpStatus;
 import java.util.Optional;
 
 import static es.bluesolution.dlq_streaming.functional_framework.FailureResultDescription.ErrorCode.DATABASE_ERROR;
+import static es.bluesolution.dlq_streaming.functional_framework.FailureResultDescription.ErrorCode.VALIDATION_ERROR;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
@@ -84,6 +85,18 @@ class TriggerDrainControllerTest {
         var response = controller.trigger();
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+        assertThat(response.getBody()).isNull();
+    }
+
+    @Test
+    void returns400WhenCommandValidationFails() {
+        configureScheduler(0, "worker", 120, false); // batchSize=0 is invalid
+        when(handler.handle(any())).thenReturn(
+                Result.failure(VALIDATION_ERROR, "DrainBatchSize must be greater than zero", null));
+
+        var response = controller.trigger();
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody()).isNull();
     }
 

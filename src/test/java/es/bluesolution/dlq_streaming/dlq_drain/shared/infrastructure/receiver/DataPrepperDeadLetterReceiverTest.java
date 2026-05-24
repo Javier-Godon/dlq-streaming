@@ -13,10 +13,12 @@ import org.springframework.web.client.RestClient;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.client.ExpectedCount.once;
+import static org.springframework.test.web.client.ExpectedCount.times;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withServiceUnavailable;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
@@ -63,6 +65,44 @@ class DataPrepperDeadLetterReceiverTest {
 
         assertThat(result.isFailure()).isTrue();
         assertThat(result.failure().code()).isEqualTo(FailureResultDescription.ErrorCode.EXTERNAL_SERVICE_ERROR);
+        server.verify();
+    }
+
+    @Test
+    void retriesOnTransient503AndSucceedsOnThirdAttempt() {
+        var restClientBuilder = RestClient.builder();
+        var server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        var properties = properties("http://dataprepper:2021/log/ingest");
+        properties.getReceiver().getDataPrepper().setMaxRetryAttempts(3);
+        var receiver = new DataPrepperDeadLetterReceiver(restClientBuilder.build(), properties);
+
+        // First two attempts return 503, third succeeds
+        server.expect(times(2), requestTo("http://dataprepper:2021/log/ingest"))
+                .andRespond(withServiceUnavailable());
+        server.expect(once(), requestTo("http://dataprepper:2021/log/ingest"))
+                .andRespond(withSuccess());
+
+        var result = receiver.receive(command("product-1_2026-05-23T10:15:30Z"));
+
+        assertThat(result.isSuccess()).isTrue();
+        server.verify();
+    }
+
+    @Test
+    void exhaustsRetriesAndReturnsFailureWhenAlwaysUnavailable() {
+        var restClientBuilder = RestClient.builder();
+        var server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        var properties = properties("http://dataprepper:2021/log/ingest");
+        properties.getReceiver().getDataPrepper().setMaxRetryAttempts(2);
+        var receiver = new DataPrepperDeadLetterReceiver(restClientBuilder.build(), properties);
+
+        server.expect(times(2), requestTo("http://dataprepper:2021/log/ingest"))
+                .andRespond(withServiceUnavailable());
+
+        var result = receiver.receive(command("product-1_2026-05-23T10:15:30Z"));
+
+        assertThat(result.isFailure()).isTrue();
+        assertThat(result.failure().message()).contains("2 attempt");
         server.verify();
     }
 
