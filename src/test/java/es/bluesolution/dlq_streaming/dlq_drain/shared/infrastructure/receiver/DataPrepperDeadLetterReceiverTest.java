@@ -4,6 +4,7 @@ import es.bluesolution.dlq_streaming.dlq_drain.domain.model.DeadLetterPayload;
 import es.bluesolution.dlq_streaming.dlq_drain.domain.model.ProcessId;
 import es.bluesolution.dlq_streaming.dlq_drain.domain.model.ReceiveDeadLetterCommand;
 import es.bluesolution.dlq_streaming.dlq_drain.shared.infrastructure.DlqDrainProperties;
+import es.bluesolution.dlq_streaming.functional_framework.FailureResultDescription;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
@@ -20,12 +21,14 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 class DataPrepperDeadLetterReceiverTest {
+
     @Test
     void postsJsonPayloadToDataPrepperWithIdempotencyHeaders() {
         var restClientBuilder = RestClient.builder();
         var server = MockRestServiceServer.bindTo(restClientBuilder).build();
         var properties = properties("http://dataprepper:2021/log/ingest");
-        var receiver = new DataPrepperDeadLetterReceiver(restClientBuilder, properties);
+        // Build RestClient after binding MockRestServiceServer
+        var receiver = new DataPrepperDeadLetterReceiver(restClientBuilder.build(), properties);
         var command = command("product-1_2026-05-23T10:15:30Z");
 
         server.expect(once(), requestTo("http://dataprepper:2021/log/ingest"))
@@ -44,18 +47,22 @@ class DataPrepperDeadLetterReceiverTest {
     }
 
     @Test
-    void returnsFailureWhenDataPrepperFails() {
+    void returnsFailureImmediatelyForNonRetryableServerError() {
         var restClientBuilder = RestClient.builder();
         var server = MockRestServiceServer.bindTo(restClientBuilder).build();
-        var receiver = new DataPrepperDeadLetterReceiver(restClientBuilder, properties("http://dataprepper:2021/log/ingest"));
+        // maxRetryAttempts=1 with 1 attempt, so no retry
+        var properties = properties("http://dataprepper:2021/log/ingest");
+        properties.getReceiver().getDataPrepper().setMaxRetryAttempts(1);
+        var receiver = new DataPrepperDeadLetterReceiver(restClientBuilder.build(), properties);
 
+        // 500 is NOT a retryable status — receiver fails immediately (no retry)
         server.expect(once(), requestTo("http://dataprepper:2021/log/ingest"))
                 .andRespond(withServerError());
 
         var result = receiver.receive(command("product-1_2026-05-23T10:15:30Z"));
 
         assertThat(result.isFailure()).isTrue();
-        assertThat(result.failure().message()).isEqualTo("Data Prepper receiver failed");
+        assertThat(result.failure().code()).isEqualTo(FailureResultDescription.ErrorCode.EXTERNAL_SERVICE_ERROR);
         server.verify();
     }
 
@@ -63,6 +70,8 @@ class DataPrepperDeadLetterReceiverTest {
         var properties = new DlqDrainProperties();
         properties.getReceiver().setType("dataprepper");
         properties.getReceiver().getDataPrepper().setUrl(dataPrepperUrl);
+        // Short retry delay so tests don't sleep
+        properties.getReceiver().getDataPrepper().setRetryInitialDelayMillis(0);
         return properties;
     }
 
@@ -72,4 +81,3 @@ class DataPrepperDeadLetterReceiverTest {
                 DeadLetterPayload.create("{\"message\":\"hello\"}").value()).value();
     }
 }
-

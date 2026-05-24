@@ -1,0 +1,22 @@
+---
+# Kustomize base for dlq-streaming.
+# Apply with: kubectl apply -k k8s/base
+# or:         kustomize build k8s/base | kubectl apply -f -
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
+  - cronjob.yaml
+  - networkpolicy.yaml
+  # secret.example.yaml is intentionally excluded from the base — apply it manually
+  # after filling in real values, or use External Secrets / Sealed Secrets.
+
+commonLabels:
+  app.kubernetes.io/part-of: dlq-streaming
+  app.kubernetes.io/managed-by: kustomize
+

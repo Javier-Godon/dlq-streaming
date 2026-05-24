@@ -1,0 +1,44 @@
+---
+# Non-sensitive configuration for dlq-streaming.
+# Sensitive values (database password, API key) belong in the Secret, not here.
+#
+# To override for a specific environment, use a Kustomize patch in the overlay:
+#   patchesStrategicMerge:
+#   - configmap-patch.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dlq-streaming-config
+  namespace: dlq-streaming
+  labels:
+    app.kubernetes.io/name: dlq-streaming
+    app.kubernetes.io/component: config
+data:
+  # ── Receiver ──────────────────────────────────────────────────────────────
+  # dataprepper: sends to Data Prepper HTTP ingest endpoint.
+  # in-memory  : no-op; records are counted but not sent (debug/test only).
+  DLQ_RECEIVER_TYPE: "dataprepper"
+
+  # Data Prepper service URL inside the cluster.
+  # Adjust the namespace if Data Prepper runs in a different namespace.
+  DLQ_DATA_PREPPER_URL: "http://data-prepper.data-prepper:2021/log/ingest"
+
+  # ── HTTP client timeouts ──────────────────────────────────────────────────
+  DLQ_DP_CONNECT_TIMEOUT_MS: "5000"
+  DLQ_DP_READ_TIMEOUT_MS: "30000"
+
+  # ── Retry policy for transient Data Prepper errors ────────────────────────
+  DLQ_DP_MAX_RETRY_ATTEMPTS: "3"
+  DLQ_DP_RETRY_INITIAL_DELAY_MS: "500"
+  DLQ_DP_RETRY_MULTIPLIER: "2.0"
+
+  # ── Drain parameters (read by TriggerDrainController) ────────────────────
+  DLQ_BATCH_SIZE: "500"
+  DLQ_WORKER_ID: "dlq-drain-worker"
+  DLQ_LEASE_SECONDS: "120"
+  DLQ_RELEASE_EXPIRED_LEASES: "true"
+
+  # ── Server ────────────────────────────────────────────────────────────────
+  SERVER_PORT: "8080"
+  MANAGEMENT_PORT: "8081"
+

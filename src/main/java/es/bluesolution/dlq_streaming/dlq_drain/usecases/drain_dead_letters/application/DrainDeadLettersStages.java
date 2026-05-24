@@ -4,6 +4,7 @@ import es.bluesolution.dlq_streaming.dlq_drain.domain.model.DeadLetterRecord;
 import es.bluesolution.dlq_streaming.dlq_drain.domain.model.DrainBatchSize;
 import es.bluesolution.dlq_streaming.dlq_drain.domain.model.DrainLeaseDuration;
 import es.bluesolution.dlq_streaming.dlq_drain.domain.model.DrainWorkerId;
+import es.bluesolution.dlq_streaming.dlq_drain.domain.model.ProcessId;
 import es.bluesolution.dlq_streaming.dlq_drain.domain.model.ReceiveDeadLetterCommand;
 import es.bluesolution.dlq_streaming.functional_framework.Result;
 
@@ -86,7 +87,7 @@ final class DrainDeadLettersStages {
                 data.storedCount(),
                 data.deletedCount(),
                 data.stoppedBecauseReceiverFailed(),
-                data.lastProcessedProcessId().map(processId -> processId.value()),
+                data.lastProcessedProcessId().map(ProcessId::value),
                 data.stopReason()));
     }
 }

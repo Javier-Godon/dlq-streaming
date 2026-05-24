@@ -1,0 +1,11 @@
+##
+## Data Prepper server configuration for dlq-streaming local development.
+##
+
+ssl: false
+
+peer_forwarder:
+  discovery_mode: local_node
+
+# Metrics are available on http://localhost:4900/metrics/prometheus
+

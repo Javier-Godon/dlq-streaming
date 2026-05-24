@@ -54,5 +54,23 @@ class ProcessIdTest {
         assertThat(result.isFailure()).isTrue();
         assertThat(result.failure().message()).isEqualTo("ProcessId must follow productReference_timestamp");
     }
+
+    @Test
+    void rejectsProcessIdContainingCarriageReturnLineFeed() {
+        // CRLF injection protection: a crafted process_id must not allow HTTP header injection
+        // when it is used as the value of X-Process-Id / Idempotency-Key headers.
+        var result = ProcessId.create("product\r\nX-Injected: evil_2026-05-23T10:15:30Z");
+
+        assertThat(result.isFailure()).isTrue();
+        assertThat(result.failure().message()).isEqualTo("ProcessId must not contain control characters");
+    }
+
+    @Test
+    void rejectsProcessIdContainingNewline() {
+        var result = ProcessId.create("product\n_2026-05-23T10:15:30Z");
+
+        assertThat(result.isFailure()).isTrue();
+        assertThat(result.failure().message()).isEqualTo("ProcessId must not contain control characters");
+    }
 }
 

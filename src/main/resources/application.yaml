@@ -2,17 +2,95 @@ spring:
   application:
     name: dlq_streaming
 
-dlq-drain:
-  receiver:
-    type: in-memory
-    data-prepper:
-      url: http://localhost:2021/log/ingest
-  scheduler:
-    enabled: false
-    batch-size: 100
-    worker-id: dlq-drain-worker
-    lease-seconds: 120
-    release-expired-leases: true
-    fixed-delay-millis: 30000
-    initial-delay-millis: 5000
+  # -------------------------------------------------------------------------
+  # Web: the drain trigger endpoint is exposed over HTTP so that a
+  # Kubernetes CronJob can POST to /drain/trigger.
+  # -------------------------------------------------------------------------
+  main:
+    web-application-type: servlet
 
+  # -------------------------------------------------------------------------
+  # Datasource — must be externalized for production.
+  #
+  # Set via environment variables:
+  #   SPRING_DATASOURCE_URL      jdbc:postgresql://<host>:5432/<db>
+  #   SPRING_DATASOURCE_USERNAME <db-user>
+  #   SPRING_DATASOURCE_PASSWORD <db-password>
+  #
+  # Or mount an application-production.yaml / application-k8s.yaml with:
+  #   spring:
+  #     datasource:
+  #       url:      jdbc:postgresql://postgres:5432/dlq
+  #       username: dlq_user
+  #       password: change_me
+  #       hikari:
+  #         maximum-pool-size: 5
+  #         connection-timeout: 30000
+  #         idle-timeout: 600000
+  #         max-lifetime: 1800000
+  #
+  # In local development use docker-compose (see docker-compose.yml) and set
+  # the env vars above or activate the local profile.
+  # -------------------------------------------------------------------------
+
+  flyway:
+    locations: classpath:db/migration
+
+server:
+  port: ${SERVER_PORT:8080}
+
+# -------------------------------------------------------------------------
+# Management / Actuator — separate port for K8s liveness/readiness probes.
+# -------------------------------------------------------------------------
+management:
+  server:
+    port: ${MANAGEMENT_PORT:8081}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+  health:
+    livenessState:
+      enabled: true
+    readinessState:
+      enabled: true
+
+dlq-drain:
+  # -------------------------------------------------------------------------
+  # API key for the /drain/trigger endpoint.
+  # When set, every request must carry "Authorization: Bearer <key>".
+  # When not set, the endpoint is unauthenticated (use network policy instead).
+  # api-key: ${DLQ_DRAIN_API_KEY:}
+  # -------------------------------------------------------------------------
+
+  receiver:
+    # type: in-memory      — no-op receiver; useful for smoke-testing the drain loop
+    # type: dataprepper    — HTTP receiver sending JSON to Data Prepper
+    type: ${DLQ_RECEIVER_TYPE:in-memory}
+    data-prepper:
+      url: ${DLQ_DATA_PREPPER_URL:http://localhost:2021/log/ingest}
+      # HTTP client timeouts (milliseconds). Override via env vars for tuning.
+      connect-timeout-millis: ${DLQ_DP_CONNECT_TIMEOUT_MS:5000}
+      read-timeout-millis: ${DLQ_DP_READ_TIMEOUT_MS:30000}
+      # Retry for transient failures (503, 502, 429, 504, connection reset).
+      max-retry-attempts: ${DLQ_DP_MAX_RETRY_ATTEMPTS:3}
+      retry-initial-delay-millis: ${DLQ_DP_RETRY_INITIAL_DELAY_MS:500}
+      retry-multiplier: ${DLQ_DP_RETRY_MULTIPLIER:2.0}
+
+  scheduler:
+    # Scheduler is DISABLED. Drain is triggered via POST /drain/trigger.
+    # Batch parameters are read from here by the controller.
+    enabled: false
+    batch-size: ${DLQ_BATCH_SIZE:100}
+    worker-id: ${DLQ_WORKER_ID:dlq-drain-worker}
+    lease-seconds: ${DLQ_LEASE_SECONDS:120}
+    release-expired-leases: ${DLQ_RELEASE_EXPIRED_LEASES:true}
+    # fixed-delay-millis and initial-delay-millis are kept for backward compat
+    # but have no effect when enabled=false.
+    fixed-delay-millis: ${DLQ_FIXED_DELAY_MILLIS:30000}
+    initial-delay-millis: ${DLQ_INITIAL_DELAY_MILLIS:5000}

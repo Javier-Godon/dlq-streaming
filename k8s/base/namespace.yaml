@@ -1,0 +1,11 @@
+---
+# Dedicated namespace for all dlq-streaming resources.
+# Override the name in environment-specific overlays (e.g. dlq-streaming-staging).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dlq-streaming
+  labels:
+    app.kubernetes.io/name: dlq-streaming
+    app.kubernetes.io/managed-by: kustomize
+

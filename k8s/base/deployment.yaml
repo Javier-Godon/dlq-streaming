@@ -1,0 +1,142 @@
+---
+# Deployment for dlq-streaming.
+#
+# Key design decisions:
+#
+# replicas: 1
+#   The drain loop uses PostgreSQL advisory leases to prevent concurrent workers
+#   from draining the same records. Multiple replicas are safe but require a
+#   CronJob-per-replica strategy or a leader-election sidecar.
+#   For simplicity the default is 1. Scale with caution.
+#
+# resources:
+#   requests/limits match for Guaranteed QoS class (no burstable).
+#   256 Mi is sufficient for the drain loop + ZGC overhead.
+#   Adjust based on dlq_dead_letter table size and batch size.
+#
+# securityContext:
+#   runAsNonRoot + read-only root filesystem + no privilege escalation.
+#   Required for compliance with Pod Security Standards (restricted).
+#
+# probes:
+#   Liveness on /actuator/health/liveness (port 8081, management-only port).
+#   Readiness on /actuator/health/readiness.
+#   StartupProbe gives the JVM+Flyway 90 s to initialise before liveness kicks in.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dlq-streaming
+  namespace: dlq-streaming
+  labels:
+    app.kubernetes.io/name: dlq-streaming
+    app.kubernetes.io/component: app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dlq-streaming
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dlq-streaming
+        app.kubernetes.io/component: app
+      annotations:
+        # Force rollout when ConfigMap or Secret changes (checksum injected by Kustomize or CI).
+        # kubectl.kubernetes.io/restartedAt: "2024-01-01T00:00:00Z"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8081"
+        prometheus.io/path: "/actuator/prometheus"
+    spec:
+      serviceAccountName: dlq-streaming
+      automountServiceAccountToken: false
+
+      # Topology: prefer different nodes when replicas > 1.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: dlq-streaming
+
+      containers:
+        - name: dlq-streaming
+          image: ghcr.io/bluesolution/dlq-streaming:latest
+          imagePullPolicy: Always
+
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: management
+              containerPort: 8081
+              protocol: TCP
+
+          # Load non-sensitive config from ConfigMap.
+          envFrom:
+            - configMapRef:
+                name: dlq-streaming-config
+            - secretRef:
+                name: dlq-streaming-secret
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+
+          # Startup: allow up to 90 s for JVM + Flyway migrations to finish.
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: management
+            failureThreshold: 18
+            periodSeconds: 5
+
+          # Liveness: restart unhealthy pods.
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: management
+            initialDelaySeconds: 0
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 5
+
+          # Readiness: remove from Service endpoints when not ready.
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: management
+            initialDelaySeconds: 0
+            periodSeconds: 5
+            failureThreshold: 3
+            timeoutSeconds: 5
+
+          # Security hardening — runs as the non-root user created in the Dockerfile.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            runAsGroup: 1001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+                - ALL
+
+          # Writable tmp volume for JVM temp files.
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: tmp
+          emptyDir: {}
+
+      # Give in-flight drain requests at most 30 s to complete on shutdown.
+      terminationGracePeriodSeconds: 30
+

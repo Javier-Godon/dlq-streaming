@@ -4,7 +4,7 @@ import es.bluesolution.dlq_streaming.dlq_drain.domain.repository.DeadLetterRepos
 import es.bluesolution.dlq_streaming.dlq_drain.domain.repository.DeadLetterReceiver;
 import es.bluesolution.dlq_streaming.functional_framework.Result;
 import es.bluesolution.dlq_streaming.functional_framework.execution.ExecutionContext;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -12,23 +12,13 @@ import java.time.Clock;
 import static es.bluesolution.dlq_streaming.functional_framework.FailureResultDescription.ErrorCode.VALIDATION_ERROR;
 
 @Service
-@ConditionalOnBean({DeadLetterRepository.class, DeadLetterReceiver.class, ExecutionContext.class, Clock.class})
+@RequiredArgsConstructor
 public class DrainDeadLettersHandler {
     private final DeadLetterRepository deadLetterRepository;
     private final DeadLetterReceiver deadLetterReceiver;
     private final ExecutionContext txContext;
     private final Clock clock;
 
-    public DrainDeadLettersHandler(
-            DeadLetterRepository deadLetterRepository,
-            DeadLetterReceiver deadLetterReceiver,
-            ExecutionContext txContext,
-            Clock clock) {
-        this.deadLetterRepository = deadLetterRepository;
-        this.deadLetterReceiver = deadLetterReceiver;
-        this.txContext = txContext;
-        this.clock = clock;
-    }
 
     public Result<DrainDeadLettersResult> handle(DrainDeadLettersCommand command) {
         if (command == null) {
@@ -47,22 +37,22 @@ public class DrainDeadLettersHandler {
         }
 
         var current = claimed.value();
-        for (var record : current.claimedRecords()) {
-            var receiveCommand = DrainDeadLettersStages.buildReceiveCommand(record);
-            if (receiveCommand.isFailure()) {
-                return Result.failure(receiveCommand.failure());
+        for (var dlr : current.claimedRecords()) {
+            var receiveCmd = DrainDeadLettersStages.buildReceiveCommand(dlr);
+            if (receiveCmd.isFailure()) {
+                return Result.failure(receiveCmd.failure());
             }
 
-            var receiveResult = deadLetterReceiver.receive(receiveCommand.value());
-            if (receiveResult.isFailure()) {
-                current = DrainDeadLettersStages.markReceiverFailure(current, record, receiveResult.failure().message());
+            var ack = deadLetterReceiver.receive(receiveCmd.value());
+            if (ack.isFailure()) {
+                current = DrainDeadLettersStages.markReceiverFailure(current, dlr, ack.failure().message());
                 return DrainDeadLettersStages.buildResult(current);
             }
 
-            current = DrainDeadLettersStages.markStored(current, record);
+            current = DrainDeadLettersStages.markStored(current, dlr);
 
             var dataAfterStore = current;
-            var deleted = txContext.execute(() -> DrainDeadLettersStages.deleteClaimed(dataAfterStore, record, ports));
+            var deleted = txContext.execute(() -> DrainDeadLettersStages.deleteClaimed(dataAfterStore, dlr, ports));
             if (deleted.isFailure()) {
                 return Result.failure(deleted.failure());
             }

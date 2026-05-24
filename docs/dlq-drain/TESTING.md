@@ -8,9 +8,14 @@ The DLQ drain has both business-critical behavior and heavy operational behavior
 |---|---|---:|---|
 | Domain/unit | `*Test.java` under `domain/model` | Yes | Fast validation of value objects |
 | Use-case unit | `DrainDeadLetters*Test.java` | Yes | Proves stop-on-first-receiver-failure and delete-after-success logic |
+| Controller unit | `TriggerDrainControllerTest` | Yes | 200/503/500 HTTP status logic |
+| Controller HTTP | `TriggerDrainControllerHttpTest` | Yes | Standalone MockMvc JSON body and status assertions |
 | Adapter unit | `DataPrepperDeadLetterReceiverTest` | Yes | Verifies Data Prepper HTTP request shape and failure mapping |
 | PostgreSQL integration | `DeadLetterRepositoryIntegrationTest` | Yes if Docker available | Proves `FOR UPDATE SKIP LOCKED`, leases, and deletes against real PostgreSQL |
+| Network chaos (Data Prepper) | `DataPrepperNetworkChaosTest` | Yes if Docker available | Toxiproxy + WireMock: connect timeout, read timeout, 503 retry, 400 no-retry, TCP reset |
+| Network chaos (PostgreSQL) | `PostgresNetworkChaosTest` | Yes if Docker available | Toxiproxy: DB connection drop, high latency — proving `socketTimeout` is mandatory |
 | BDD/acceptance | `DlqDrainCucumberTest` + `.feature` | Yes | Documents business behavior in Gherkin |
+| Kubernetes deployment | `KubernetesDeploymentTest` | No, `-Pkubernetes-tests` | Deploys to k3s via Testcontainers; proves health probes, drain trigger, security context |
 | Real E2E | `DlqDrainDataPrepperOpenSearchE2E` | No, opt-in | Requires external PostgreSQL + Data Prepper + OpenSearch |
 | Large-volume simulation | `LargeVolumePostgresDrainSimulationE2E` | No, opt-in | Can insert and drain 1,000,000 PostgreSQL rows without Data Prepper/OpenSearch |
 
@@ -22,7 +27,51 @@ Run this before committing normal code changes:
 ./mvnw test
 ```
 
-This runs unit tests, BDD tests, Spring context smoke test, adapter tests, and PostgreSQL Testcontainers integration tests when Docker is available.
+This runs unit tests, BDD tests, Spring context smoke test, adapter tests, network chaos tests, and PostgreSQL Testcontainers integration tests when Docker is available.
+
+## Chaos tests only (Data Prepper + PostgreSQL)
+
+```bash
+./mvnw test -Dtest='DataPrepperNetworkChaosTest,PostgresNetworkChaosTest'
+```
+
+These tests require Docker (Toxiproxy + WireMock).
+
+**TDD findings that produced production code changes:**
+
+| Test | Finding | Fix |
+|---|---|---|
+| `connectTimeoutReturnsFailureWithinExpectedDuration` | No connect timeout → application hangs | `JdkClientHttpRequestFactory` with `connectTimeout` |
+| `readTimeoutReturnsFailureWhenServerIsUnresponsive` | No read timeout → hangs on slow server | `factory.setReadTimeout(...)` |
+| `retriesOnTransient503AndEventuallySucceeds` | No retry → fails on pod restarts | Exponential back-off retry loop |
+| `badRequestFailsImmediatelyWithoutRetry` | 4xx must NOT retry | `isRetryable()` guard |
+| `connectionDropReturnsFailure` (Postgres) | DB connection drop hangs indefinitely | `?socketTimeout=5` in JDBC URL |
+
+## Kubernetes deployment tests
+
+```bash
+# Build the Docker image first (done automatically by the profile):
+./mvnw test -Pkubernetes-tests
+```
+
+The `kubernetes-tests` Maven profile:
+1. Builds the Docker image with `docker build -t dlq-streaming:k8s-test .`
+2. Starts a k3s cluster (Testcontainers k3s — K8s 1.32 in Docker)
+3. Loads the image into k3s containerd
+4. Deploys PostgreSQL + dlq-streaming
+5. Runs 9 assertions (see `KubernetesDeploymentTest`)
+6. Tears down the cluster
+
+**What is asserted:**
+- Pod becomes Ready after startup probes pass
+- Liveness probe returns `{"status":"UP"}`
+- Readiness probe becomes healthy (requires `?socketTimeout=5` in JDBC URL)
+- `POST /drain/trigger` returns HTTP 200
+- Response body contains `claimedCount`, `storedCount`, etc.
+- Pod runs as UID 1001, `runAsNonRoot=true`, no privilege escalation
+- Resource limits are defined (prevents OOMKilled)
+- All three probes are configured
+- Pod has exactly one container
 
 ## Acceptance / BDD only
 

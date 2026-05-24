@@ -232,13 +232,14 @@ public sealed interface Result<S> permits Result.Success, Result.Failure {
     /**
      * Execute this Result within an execution context.
      *
-     * @deprecated <strong>BROKEN IN JAVA</strong> — In Java (eagerly evaluated), the flatMap chain
-     * before {@code .within()} has already executed by the time this method is called.
-     * The transaction wraps the already-computed result, not the computation.
+     * <p><strong>Warning — avoid when stages need transactional scope.</strong>
+     * In Java, {@code flatMap} evaluates eagerly. If you chain {@code .flatMap(...).within(txContext)},
+     * all stages have already executed by the time the context is applied.
+     * The transaction then wraps an already-computed value, not the computation itself.</p>
      *
-     * <p>Use {@link #pipeline(Object)} instead, which defers computation correctly:</p>
+     * <p>Use {@link #pipeline(Object)} instead to keep stages deferred until the context runs:</p>
      * <pre>
-     * // ❌ BROKEN: stages execute BEFORE the transaction
+     * // ❌ WRONG: stages execute BEFORE the transaction
      * return Result.success(data)
      *     .flatMap(d -> fetch(d, ports))   // Runs eagerly, outside tx!
      *     .within(txContext);               // Transaction wraps nothing useful
@@ -255,12 +256,14 @@ public sealed interface Result<S> permits Result.Success, Result.Failure {
      * );
      * </pre>
      *
+     * <p>This method is safe to call on an already-computed {@code Result} when no deferred stages
+     * are involved — for example, wrapping a single repository call.</p>
+     *
      * @param executionContext the context that describes how to execute
      * @return this Result (already computed), executed within the given context
      * @see #pipeline(Object) the correct deferred alternative
      * @see ResultPipeline#within(ExecutionContext)
      */
-    @Deprecated(since = "2026.04", forRemoval = true)
     default Result<S> within(ExecutionContext executionContext) {
         return executionContext.execute(() -> this);
     }

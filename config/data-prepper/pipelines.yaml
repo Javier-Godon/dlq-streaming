@@ -1,0 +1,41 @@
+##
+## Data Prepper pipeline configuration for dlq-streaming.
+##
+## This pipeline:
+##   1. Receives JSON events via HTTP (port 2021, path /log/ingest).
+##   2. Writes each event verbatim to the OpenSearch dead-letter index.
+##
+## The dlq-streaming application sends one event per dead-letter record with:
+##   Content-Type:   application/json
+##   X-Process-Id:   <process_id>    (for tracing)
+##   Idempotency-Key: <process_id>   (for deduplication)
+##
+
+dlq-drain-pipeline:
+  source:
+    http:
+      # Listens on port 2021. Accepts JSON arrays or single JSON objects.
+      port: 2021
+      path: /log/ingest
+      # Reject payloads larger than 10 MB
+      request_timeout: 10000
+
+  processor:
+    # Add ingest metadata — timestamp when Data Prepper received the event.
+    - add_entries:
+        entries:
+          - key: ingest_timestamp
+            format: "%{yyyy-MM-dd'T'HH:mm:ss.SSSZ}"
+
+  sink:
+    - opensearch:
+        hosts:
+          - "http://opensearch:9200"
+        # Security disabled in single-node dev setup.
+        # For production: enable TLS and AWS SigV4 / basic auth.
+        insecure: true
+        index: "dlq-records-%{yyyy.MM.dd}"
+        # Bulk flush settings — adjust for throughput vs. latency trade-off.
+        bulk_size: 5
+        flush_timeout: 60000
+

@@ -16,6 +16,12 @@ public record ProcessId(String value) {
             return Result.failure(VALIDATION_ERROR, "ProcessId must not exceed 300 characters", null);
         }
 
+        // Reject control characters to prevent HTTP-header injection when process_id
+        // is used as an HTTP header value (X-Process-Id, Idempotency-Key).
+        if (normalized.chars().anyMatch(c -> c < 0x20)) {
+            return Result.failure(VALIDATION_ERROR, "ProcessId must not contain control characters", null);
+        }
+
         var separatorIndex = normalized.lastIndexOf('_');
         if (separatorIndex <= 0 || separatorIndex == normalized.length() - 1) {
             return Result.failure(VALIDATION_ERROR, "ProcessId must follow productReference_timestamp", null);

@@ -102,7 +102,8 @@ class DlqDrainDataPrepperOpenSearchE2E {
         var properties = new DlqDrainProperties();
         properties.getReceiver().setType("dataprepper");
         properties.getReceiver().getDataPrepper().setUrl(dataPrepperUrl);
-        var receiver = new DataPrepperDeadLetterReceiver(RestClient.builder(), properties);
+        var restClient = RestClient.builder().build();
+        var receiver = new DataPrepperDeadLetterReceiver(restClient, properties);
         var txContext = TransactionExecutionContext.of(new DataSourceTransactionManager(dataSource));
         return new DrainDeadLettersHandler(repository, receiver, txContext, Clock.systemUTC());
     }

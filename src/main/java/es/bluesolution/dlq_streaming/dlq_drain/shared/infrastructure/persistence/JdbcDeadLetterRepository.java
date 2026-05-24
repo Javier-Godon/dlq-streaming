@@ -1,7 +1,7 @@
 package es.bluesolution.dlq_streaming.dlq_drain.shared.infrastructure.persistence;
 
-import es.bluesolution.dlq_streaming.dlq_drain.domain.model.DeadLetterPayload;
 import es.bluesolution.dlq_streaming.dlq_drain.domain.model.DeadLetterOccurredAt;
+import es.bluesolution.dlq_streaming.dlq_drain.domain.model.DeadLetterPayload;
 import es.bluesolution.dlq_streaming.dlq_drain.domain.model.DeadLetterRecord;
 import es.bluesolution.dlq_streaming.dlq_drain.domain.model.DrainBatchSize;
 import es.bluesolution.dlq_streaming.dlq_drain.domain.model.DrainLeaseDuration;
@@ -9,10 +9,9 @@ import es.bluesolution.dlq_streaming.dlq_drain.domain.model.DrainWorkerId;
 import es.bluesolution.dlq_streaming.dlq_drain.domain.model.ProcessId;
 import es.bluesolution.dlq_streaming.dlq_drain.domain.repository.DeadLetterRepository;
 import es.bluesolution.dlq_streaming.functional_framework.Result;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
-import org.springframework.jdbc.core.RowMapper;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.stereotype.Repository;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -23,8 +22,28 @@ import java.util.List;
 import static es.bluesolution.dlq_streaming.functional_framework.FailureResultDescription.ErrorCode.BUSINESS_RULE_ERROR;
 import static es.bluesolution.dlq_streaming.functional_framework.FailureResultDescription.ErrorCode.DATABASE_ERROR;
 
-@Repository
-@ConditionalOnBean(JdbcClient.class)
+/**
+ * PostgreSQL-backed implementation of {@link DeadLetterRepository}.
+ *
+ * <h3>SQL injection analysis (CVE / OWASP A03)</h3>
+ * <p>All SQL statements in this class are <b>immune to SQL injection</b> because:</p>
+ * <ol>
+ *   <li>Every SQL string is a {@code static final} constant — no runtime string concatenation.</li>
+ *   <li>All user/application values are passed as named parameters via
+ *       {@code JdbcClient.sql(...).param("name", value)} which uses
+ *       {@code PreparedStatement} internally. The database driver handles safe parameter binding.</li>
+ *   <li>The {@code LIMIT :batchSize} clause uses a PreparedStatement parameter; PostgreSQL
+ *       accepts {@code LIMIT ?} without string interpolation.</li>
+ * </ol>
+ * <p>No raw values from external input are ever concatenated into the SQL string.</p>
+ *
+ * <h3>Production datasource requirements</h3>
+ * <p>Always include {@code ?socketTimeout=30} in {@code SPRING_DATASOURCE_URL} to prevent
+ * the {@code FOR UPDATE SKIP LOCKED} claim query from blocking indefinitely on network partition.
+ * Validated by {@code PostgresNetworkChaosTest}.</p>
+ */
+@Slf4j
+@RequiredArgsConstructor
 public class JdbcDeadLetterRepository implements DeadLetterRepository {
     private static final String CLAIM_NEXT_BATCH_SQL = """
             WITH next_rows AS (
@@ -66,9 +85,6 @@ public class JdbcDeadLetterRepository implements DeadLetterRepository {
 
     private final JdbcClient jdbcClient;
 
-    public JdbcDeadLetterRepository(JdbcClient jdbcClient) {
-        this.jdbcClient = jdbcClient;
-    }
 
     @Override
     public Result<List<DeadLetterRecord>> claimNextBatch(
@@ -83,7 +99,7 @@ public class JdbcDeadLetterRepository implements DeadLetterRepository {
                     .param("workerId", workerId.value())
                     .param("claimedAt", Timestamp.from(claimedAt))
                     .param("leaseUntil", Timestamp.from(leaseUntil))
-                    .query(deadLetterRecordRowMapper())
+                    .query(this::mapDeadLetterRecord)
                     .list();
             return Result.success(records);
         } catch (Exception e) {
@@ -121,9 +137,6 @@ public class JdbcDeadLetterRepository implements DeadLetterRepository {
         }
     }
 
-    private RowMapper<DeadLetterRecord> deadLetterRecordRowMapper() {
-        return this::mapDeadLetterRecord;
-    }
 
     private DeadLetterRecord mapDeadLetterRecord(ResultSet rs, int rowNum) throws SQLException {
         var processId = ProcessId.create(rs.getString("process_id"));
@@ -141,13 +154,11 @@ public class JdbcDeadLetterRepository implements DeadLetterRepository {
             throw new SQLException(occurredAt.failure().message());
         }
 
-        var record = DeadLetterRecord.create(processId.value(), occurredAt.value(), payload.value(), rs.getInt("attempt_count"));
-        if (record.isFailure()) {
-            throw new SQLException(record.failure().message());
+        var dlr = DeadLetterRecord.create(processId.value(), occurredAt.value(), payload.value(), rs.getInt("attempt_count"));
+        if (dlr.isFailure()) {
+            throw new SQLException(dlr.failure().message());
         }
 
-        return record.value();
+        return dlr.value();
     }
 }
-
-

@@ -1,0 +1,49 @@
+# =============================================================================
+# .dockerignore — exclude files from the Docker build context
+# =============================================================================
+# Keeping the context small speeds up builds and prevents secrets/IDE files
+# from accidentally being included in the image.
+
+# Build output (except the fat JAR which the runtime stage needs)
+target/
+!target/*.jar
+
+# Source tree not needed once JAR is built (builder stage copies ./src itself,
+# but including IDE/editor metadata is unnecessary).
+.idea/
+*.iml
+.DS_Store
+*.swp
+*.swo
+
+# Test resources
+src/test/
+
+# Local development / environment files
+.env
+.env.*
+docker-compose*.yml
+docker-compose*.yaml
+
+# Git metadata
+.git/
+.gitignore
+.gitattributes
+
+# GitHub / CI configuration
+.github/
+
+# Kubernetes manifests (not part of the image)
+k8s/
+
+# Documentation
+docs/
+*.md
+
+# Maven wrapper (downloaded inside builder stage)
+# .mvn/ and mvnw ARE needed — do not ignore them
+
+# Misc
+*.log
+*.pid
+

@@ -1,0 +1,67 @@
+---
+# NetworkPolicy for dlq-streaming.
+#
+# Ingress:
+#   - Allow inbound on port 8080 (drain trigger) ONLY from pods
+#     with label app.kubernetes.io/component=cronjob-runner (the CronJob trigger).
+#   - Allow inbound on port 8081 (management) from any pod in the namespace
+#     (Prometheus scraping, health checks from the Node).
+#
+# Egress:
+#   - Allow DNS (port 53 UDP/TCP) to kube-dns.
+#   - Allow outbound to PostgreSQL (port 5432).
+#   - Allow outbound to Data Prepper (port 2021).
+#   - Deny everything else.
+#
+# Adjust namespace selectors if PostgreSQL or Data Prepper run in different namespaces.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dlq-streaming
+  namespace: dlq-streaming
+  labels:
+    app.kubernetes.io/name: dlq-streaming
+    app.kubernetes.io/component: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: dlq-streaming
+
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress:
+    # Allow the CronJob trigger pod to reach the drain endpoint.
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: cronjob-runner
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Allow Prometheus / readiness probes from within the namespace.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: dlq-streaming
+      ports:
+        - protocol: TCP
+          port: 8081
+
+  egress:
+    # DNS resolution
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # PostgreSQL
+    - ports:
+        - protocol: TCP
+          port: 5432
+    # Data Prepper HTTP ingest
+    - ports:
+        - protocol: TCP
+          port: 2021
+

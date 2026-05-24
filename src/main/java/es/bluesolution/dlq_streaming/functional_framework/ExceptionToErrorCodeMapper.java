@@ -5,9 +5,6 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
-import org.springframework.security.access.AccessDeniedException;
-import org.springframework.security.authentication.BadCredentialsException;
-import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.HttpMediaTypeNotAcceptableException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
@@ -21,12 +18,6 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.server.ServerWebInputException;
 import org.springframework.web.servlet.NoHandlerFoundException;
-
-import jakarta.persistence.EntityNotFoundException;
-import jakarta.persistence.PersistenceException;
-import jakarta.validation.ConstraintViolationException;
-import jakarta.ws.rs.NotAuthorizedException;
-import jakarta.ws.rs.NotFoundException;
 
 import org.jspecify.annotations.Nullable;
 
@@ -77,7 +68,6 @@ public final class ExceptionToErrorCodeMapper {
 
         // ---- Spring Web/MVC: Validation errors ----
         EXCEPTION_MAPPINGS.put(MethodArgumentNotValidException.class, FailureResultDescription.ErrorCode.VALIDATION_ERROR);
-        EXCEPTION_MAPPINGS.put(ConstraintViolationException.class, FailureResultDescription.ErrorCode.VALIDATION_ERROR);
         EXCEPTION_MAPPINGS.put(HttpMessageNotReadableException.class, FailureResultDescription.ErrorCode.VALIDATION_ERROR);
         EXCEPTION_MAPPINGS.put(MissingServletRequestParameterException.class, FailureResultDescription.ErrorCode.VALIDATION_ERROR);
         EXCEPTION_MAPPINGS.put(MissingRequestHeaderException.class, FailureResultDescription.ErrorCode.VALIDATION_ERROR);
@@ -89,27 +79,14 @@ public final class ExceptionToErrorCodeMapper {
         // ---- Spring Web/MVC: Not found ----
         EXCEPTION_MAPPINGS.put(NoHandlerFoundException.class, FailureResultDescription.ErrorCode.NOT_FOUND);
 
-        // ---- Spring WebFlux ----
+        // ---- Spring Web reactive ----
         EXCEPTION_MAPPINGS.put(ServerWebInputException.class, FailureResultDescription.ErrorCode.VALIDATION_ERROR);
 
-        // ---- Spring Security: Authentication and authorization ----
-        EXCEPTION_MAPPINGS.put(AuthenticationException.class, FailureResultDescription.ErrorCode.AUTHENTICATION_ERROR);
-        EXCEPTION_MAPPINGS.put(BadCredentialsException.class, FailureResultDescription.ErrorCode.AUTHENTICATION_ERROR);
-        EXCEPTION_MAPPINGS.put(AccessDeniedException.class, FailureResultDescription.ErrorCode.AUTHENTICATION_ERROR);
-
-        // ---- JPA/Hibernate: Not found cases ----
-        EXCEPTION_MAPPINGS.put(EntityNotFoundException.class, FailureResultDescription.ErrorCode.NOT_FOUND);
+        // ---- Spring Data/JDBC: Database operations ----
         EXCEPTION_MAPPINGS.put(EmptyResultDataAccessException.class, FailureResultDescription.ErrorCode.NOT_FOUND);
-
-        // ---- JPA/Hibernate: Database operations ----
         EXCEPTION_MAPPINGS.put(DataAccessException.class, FailureResultDescription.ErrorCode.DATABASE_ERROR);
-        EXCEPTION_MAPPINGS.put(PersistenceException.class, FailureResultDescription.ErrorCode.DATABASE_ERROR);
         EXCEPTION_MAPPINGS.put(DataIntegrityViolationException.class, FailureResultDescription.ErrorCode.BUSINESS_RULE_ERROR);
         EXCEPTION_MAPPINGS.put(DuplicateKeyException.class, FailureResultDescription.ErrorCode.BUSINESS_RULE_ERROR);
-
-        // ---- JAX-RS: Web services ----
-        EXCEPTION_MAPPINGS.put(NotAuthorizedException.class, FailureResultDescription.ErrorCode.AUTHENTICATION_ERROR);
-        EXCEPTION_MAPPINGS.put(NotFoundException.class, FailureResultDescription.ErrorCode.NOT_FOUND);
 
         // ---- Spring HTTP Clients: External service calls ----
         EXCEPTION_MAPPINGS.put(HttpClientErrorException.class, FailureResultDescription.ErrorCode.EXTERNAL_SERVICE_ERROR);
@@ -140,11 +117,10 @@ public final class ExceptionToErrorCodeMapper {
 
         // Special case: Spring's ResponseStatusException contains its own status
         if (exception instanceof ResponseStatusException rse) {
-            // Map HTTP status to our error codes
             return switch (rse.getStatusCode().value()) {
                 case 400, 422 -> FailureResultDescription.ErrorCode.VALIDATION_ERROR;
                 case 401 -> FailureResultDescription.ErrorCode.AUTHENTICATION_ERROR;
-                case 403 -> FailureResultDescription.ErrorCode.AUTHENTICATION_ERROR;
+                case 403 -> FailureResultDescription.ErrorCode.AUTHORIZATION_ERROR;
                 case 404 -> FailureResultDescription.ErrorCode.NOT_FOUND;
                 case 409 -> FailureResultDescription.ErrorCode.BUSINESS_RULE_ERROR;
                 case 502, 503, 504 -> FailureResultDescription.ErrorCode.EXTERNAL_SERVICE_ERROR;
@@ -162,7 +138,6 @@ public final class ExceptionToErrorCodeMapper {
             cls = cls.getSuperclass();
         }
 
-        // This should never happen due to the Exception.class mapping, but safety first
         return FailureResultDescription.ErrorCode.UNKNOWN_ERROR;
     }
 

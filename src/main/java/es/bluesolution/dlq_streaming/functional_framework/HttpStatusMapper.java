@@ -5,9 +5,6 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageNotReadableException;
-import org.springframework.security.access.AccessDeniedException;
-import org.springframework.security.authentication.BadCredentialsException;
-import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.HttpMediaTypeNotAcceptableException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
@@ -20,10 +17,6 @@ import org.springframework.web.server.ServerErrorException;
 import org.springframework.web.server.ServerWebInputException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 
-import jakarta.persistence.EntityNotFoundException;
-import jakarta.validation.ConstraintViolationException;
-import jakarta.ws.rs.NotFoundException;
-
 import java.io.EOFException;
 import java.io.FileNotFoundException;
 import java.net.ConnectException;
@@ -35,8 +28,8 @@ import java.util.concurrent.TimeoutException;
 
 /**
  * Maps exceptions to appropriate HTTP status codes following established conventions.
- * This mapper provides comprehensive coverage of JDK, Spring, JPA, and other framework exceptions.
- * 
+ * This mapper provides comprehensive coverage of JDK, Spring, and JDBC exceptions.
+ *
  * The mapping strategy follows Railway-Oriented Programming principles by converting
  * exceptions from external libraries into appropriate HTTP responses without throwing
  * exceptions within our domain logic.
@@ -81,7 +74,6 @@ public final class HttpStatusMapper {
 
         // ---- Spring Web/MVC: Validation errors (422 Unprocessable Entity) ----
         EXCEPTION_TO_STATUS_MAP.put(MethodArgumentNotValidException.class, HttpStatus.valueOf(422));
-        EXCEPTION_TO_STATUS_MAP.put(ConstraintViolationException.class, HttpStatus.valueOf(422));
 
         // ---- Spring Web/MVC: Not found (404) ----
         EXCEPTION_TO_STATUS_MAP.put(NoHandlerFoundException.class, HttpStatus.NOT_FOUND);
@@ -93,25 +85,14 @@ public final class HttpStatusMapper {
         EXCEPTION_TO_STATUS_MAP.put(HttpMediaTypeNotAcceptableException.class, HttpStatus.NOT_ACCEPTABLE);
         EXCEPTION_TO_STATUS_MAP.put(HttpMediaTypeNotSupportedException.class, HttpStatus.UNSUPPORTED_MEDIA_TYPE);
 
-        // ---- Spring WebFlux ----
+        // ---- Spring Web reactive ----
         EXCEPTION_TO_STATUS_MAP.put(ServerWebInputException.class, HttpStatus.BAD_REQUEST);
         EXCEPTION_TO_STATUS_MAP.put(ServerErrorException.class, HttpStatus.INTERNAL_SERVER_ERROR);
 
-        // ---- Spring Security ----
-        EXCEPTION_TO_STATUS_MAP.put(AuthenticationException.class, HttpStatus.UNAUTHORIZED);
-        EXCEPTION_TO_STATUS_MAP.put(BadCredentialsException.class, HttpStatus.UNAUTHORIZED);
-        EXCEPTION_TO_STATUS_MAP.put(AccessDeniedException.class, HttpStatus.FORBIDDEN);
-
-        // ---- JPA/Hibernate: Not found ----
-        EXCEPTION_TO_STATUS_MAP.put(EntityNotFoundException.class, HttpStatus.NOT_FOUND);
+        // ---- Spring Data/JDBC: Not found and conflict ----
         EXCEPTION_TO_STATUS_MAP.put(EmptyResultDataAccessException.class, HttpStatus.NOT_FOUND);
-
-        // ---- JPA/Hibernate: Conflict ----
         EXCEPTION_TO_STATUS_MAP.put(DataIntegrityViolationException.class, HttpStatus.CONFLICT);
         EXCEPTION_TO_STATUS_MAP.put(DuplicateKeyException.class, HttpStatus.CONFLICT);
-
-        // ---- JAX-RS ----
-        EXCEPTION_TO_STATUS_MAP.put(NotFoundException.class, HttpStatus.NOT_FOUND);
 
         // ---- Top-level fallbacks (should be last due to inheritance hierarchy) ----
         EXCEPTION_TO_STATUS_MAP.put(RuntimeException.class, HttpStatus.INTERNAL_SERVER_ERROR);
@@ -125,7 +106,7 @@ public final class HttpStatusMapper {
 
     /**
      * Maps a FailureResultDescription to appropriate HTTP status.
-     * 
+     *
      * This method provides comprehensive mapping by:
      * 1. Special handling for ResponseStatusException (extracts embedded status)
      * 2. Exception-specific mapping using inheritance hierarchy traversal
@@ -155,7 +136,6 @@ public final class HttpStatusMapper {
 
     /**
      * Maps an exception directly to HTTP status using inheritance hierarchy.
-     * This ensures we never have an unmapped exception by walking up the class hierarchy.
      */
     private static HttpStatus mapExceptionToStatus(Exception exception) {
         Class<?> cls = exception.getClass();
@@ -171,7 +151,7 @@ public final class HttpStatusMapper {
 
     /**
      * Maps Railway framework error codes to HTTP status codes.
-     * MANDATORY: Exhaustive switch ensures all error codes are mapped
+     * MANDATORY: Exhaustive switch ensures all error codes are mapped.
      */
     private static HttpStatus mapErrorCodeToStatus(FailureResultDescription.ErrorCode errorCode) {
         return switch (errorCode) {
@@ -182,7 +162,7 @@ public final class HttpStatusMapper {
             case NOT_FOUND -> HttpStatus.NOT_FOUND;                    // 404
             case BUSINESS_RULE_ERROR -> HttpStatus.CONFLICT;           // 409
             case RATE_LIMIT_ERROR -> HttpStatus.TOO_MANY_REQUESTS;     // 429
-            
+
             // Server-side errors (5xx HTTP range)
             case TECHNICAL_ERROR -> HttpStatus.INTERNAL_SERVER_ERROR;  // 500
             case DATABASE_ERROR -> HttpStatus.INTERNAL_SERVER_ERROR;   // 500

@@ -1,0 +1,39 @@
+---
+# Application ConfigMap for Kubernetes deployment tests.
+# Uses in-memory receiver to avoid needing Data Prepper.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dlq-streaming-config
+  namespace: default
+  labels:
+    app: dlq-streaming
+data:
+  DLQ_RECEIVER_TYPE: "in-memory"
+  DLQ_BATCH_SIZE: "10"
+  DLQ_WORKER_ID: "k8s-test"
+  DLQ_LEASE_SECONDS: "30"
+  SERVER_PORT: "8080"
+  MANAGEMENT_PORT: "8081"
+  MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,metrics,prometheus,mappings,beans"
+---
+# Secret with test database credentials.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: dlq-streaming-secret
+  namespace: default
+  labels:
+    app: dlq-streaming
+type: Opaque
+stringData:
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/dlq?socketTimeout=5"
+  SPRING_DATASOURCE_USERNAME: "dlq_user"
+  SPRING_DATASOURCE_PASSWORD: "test_password"
+  # DLQ_DRAIN_API_KEY is intentionally absent — when not set, the ApiKeyAuthFilter
+  # is not registered and /drain/trigger is accessible without a Bearer token.
+  # See DlqDrainInfrastructureConfig for the @ConditionalOnProperty guard.
+
+
+
+

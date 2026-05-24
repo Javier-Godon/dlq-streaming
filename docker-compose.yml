@@ -1,0 +1,95 @@
+services:
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL — the dead-letter source database.
+  # Flyway migrations run automatically on application start.
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:17-alpine
+    container_name: dlq-postgres
+    environment:
+      POSTGRES_DB: dlq
+      POSTGRES_USER: dlq_user
+      POSTGRES_PASSWORD: change_me
+    ports:
+      - "5432:5432"
+    volumes:
+      - dlq_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dlq_user -d dlq"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ---------------------------------------------------------------------------
+  # OpenSearch — the final destination for dead-letter records.
+  # Exposed on port 9200 for direct inspection during development.
+  # ---------------------------------------------------------------------------
+  opensearch:
+    image: opensearchproject/opensearch:2.19.2
+    container_name: dlq-opensearch
+    environment:
+      - discovery.type=single-node
+      - plugins.security.disabled=true
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=Admin_Password1!
+    ports:
+      - "9200:9200"
+    volumes:
+      - dlq_opensearch_data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health | grep -v '\"status\":\"red\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # ---------------------------------------------------------------------------
+  # Data Prepper — HTTP ingestion gateway in front of OpenSearch.
+  # Listens on port 2021 (/log/ingest endpoint).
+  # Configuration is loaded from ./config/data-prepper/ (see README).
+  # ---------------------------------------------------------------------------
+  data-prepper:
+    image: opensearchproject/data-prepper:2.11.0
+    container_name: dlq-data-prepper
+    ports:
+      - "2021:2021"    # HTTP source (log/ingest)
+      - "4900:4900"    # Data Prepper peer forwarding
+    volumes:
+      - ./config/data-prepper/pipelines.yaml:/usr/share/data-prepper/pipelines/pipelines.yaml:ro
+      - ./config/data-prepper/data-prepper-config.yaml:/usr/share/data-prepper/config/data-prepper-config.yaml:ro
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4900/list || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # ---------------------------------------------------------------------------
+  # dlq-streaming application (optional — uncomment when running in Docker).
+  # When running via `./mvnw spring-boot:run` instead, leave this commented.
+  # ---------------------------------------------------------------------------
+  # dlq-streaming:
+  #   image: dlq-streaming:latest
+  #   container_name: dlq-streaming
+  #   environment:
+  #     SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dlq
+  #     SPRING_DATASOURCE_USERNAME: dlq_user
+  #     SPRING_DATASOURCE_PASSWORD: change_me
+  #     DLQ_RECEIVER_TYPE: dataprepper
+  #     DLQ_DATA_PREPPER_URL: http://data-prepper:2021/log/ingest
+  #     DLQ_SCHEDULER_ENABLED: "true"
+  #     DLQ_BATCH_SIZE: "500"
+  #     MANAGEMENT_PORT: "8081"
+  #   ports:
+  #     - "8081:8081"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     data-prepper:
+  #       condition: service_healthy
+
+volumes:
+  dlq_postgres_data:
+  dlq_opensearch_data:
+

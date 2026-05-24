@@ -1,0 +1,108 @@
+---
+# CronJob — triggers the DLQ drain via POST /drain/trigger.
+#
+# Schedule example  (every 5 minutes):  "*/5 * * * *"
+# Adjust the schedule to match your DLQ processing SLA.
+#
+# Design rationale:
+#   The drain logic lives inside the dlq-streaming pod, not in this CronJob.
+#   This Job is a thin HTTP client (curl) that POSTs to the service endpoint
+#   and exits non-zero if the response is not 2xx (triggering a K8s Job failure
+#   which is visible in `kubectl get cronjobs` LAST SCHEDULE / ACTIVE columns).
+#
+# Security:
+#   If DLQ_DRAIN_API_KEY is set in the dlq-streaming-secret, mount the same
+#   secret in this Job and pass it as a Bearer token.
+#
+# Exit codes from curl (used for K8s Job failure detection):
+#   0      — HTTP 2xx (success)
+#   22     — HTTP 4xx / 5xx when using --fail
+#   Non-0  — network error
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dlq-drain-trigger
+  namespace: dlq-streaming
+  labels:
+    app.kubernetes.io/name: dlq-streaming
+    app.kubernetes.io/component: cronjob
+spec:
+  # Every 5 minutes. Adjust to your SLA.
+  schedule: "*/5 * * * *"
+
+  # Keep 3 successful and 3 failed job records for diagnostics.
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+
+  # If the previous job is still running, skip the new one.
+  # Change to Allow if you want parallel drains (lease-based deduplication
+  # prevents duplicate processing even with concurrent jobs).
+  concurrencyPolicy: Forbid
+
+  # If the job misses its window by more than 60 s, skip it.
+  startingDeadlineSeconds: 60
+
+  jobTemplate:
+    spec:
+      # Retry at most once on transient failure.
+      backoffLimit: 1
+
+      # Kill the job after 5 minutes to prevent zombie jobs.
+      activeDeadlineSeconds: 300
+
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: dlq-streaming
+            app.kubernetes.io/component: cronjob-runner
+        spec:
+          serviceAccountName: dlq-streaming
+          automountServiceAccountToken: false
+          restartPolicy: OnFailure
+
+          containers:
+            - name: trigger
+              image: curlimages/curl:8.14.1
+              imagePullPolicy: IfNotPresent
+              command:
+                - sh
+                - -c
+                - |
+                  set -e
+                  echo "[$(date -u +%FT%TZ)] Triggering DLQ drain..."
+                  RESPONSE=$(curl -sf \
+                    --max-time 240 \
+                    -X POST \
+                    -H "Content-Type: application/json" \
+                    ${DLQ_API_KEY:+-H "Authorization: Bearer ${DLQ_API_KEY}"} \
+                    http://dlq-streaming.dlq-streaming:8080/drain/trigger)
+                  echo "[$(date -u +%FT%TZ)] Response: ${RESPONSE}"
+
+              env:
+                # Optional: set DLQ_API_KEY from the secret if api-key protection is enabled.
+                # Uncomment the following block when using API key authentication:
+                # - name: DLQ_API_KEY
+                #   valueFrom:
+                #     secretKeyRef:
+                #       name: dlq-streaming-secret
+                #       key: DLQ_DRAIN_API_KEY
+
+              resources:
+                requests:
+                  cpu: "10m"
+                  memory: "16Mi"
+                limits:
+                  cpu: "100m"
+                  memory: "32Mi"
+
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 65534   # nobody in curlimages/curl
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                seccompProfile:
+                  type: RuntimeDefault
+                capabilities:
+                  drop:
+                    - ALL
+

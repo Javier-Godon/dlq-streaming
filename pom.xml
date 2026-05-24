@@ -33,106 +33,106 @@
 		<testcontainers.version>1.21.3</testcontainers.version>
 	</properties>
 	<dependencies>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-batch</artifactId>
-		</dependency>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-batch-jdbc</artifactId>
-		</dependency>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-flyway</artifactId>
-		</dependency>
+		<!-- JDBC: JdbcClient, DataSourceTransactionManager, HikariCP -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-jdbc</artifactId>
 		</dependency>
+		<!-- Flyway migrations -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-data-jpa</artifactId>
+			<artifactId>spring-boot-starter-flyway</artifactId>
 		</dependency>
+		<!-- Flyway PostgreSQL dialect support -->
 		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-security</artifactId>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-database-postgresql</artifactId>
 		</dependency>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-validation</artifactId>
-		</dependency>
+		<!-- Spring Web: RestClient for outgoing HTTP to Data Prepper receiver -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc</artifactId>
 		</dependency>
+		<!-- PostgreSQL JDBC driver -->
 		<dependency>
-			<groupId>org.springdoc</groupId>
-			<artifactId>springdoc-openapi-starter-webmvc-api</artifactId>
-			<version>3.0.0</version>
+			<groupId>org.postgresql</groupId>
+			<artifactId>postgresql</artifactId>
+			<scope>runtime</scope>
 		</dependency>
-		<dependency>
-			<groupId>jakarta.ws.rs</groupId>
-			<artifactId>jakarta.ws.rs-api</artifactId>
-			<version>4.0.0</version>
-		</dependency>
+		<!-- Lombok: @Slf4j and other code generation -->
 		<dependency>
 			<groupId>org.projectlombok</groupId>
 			<artifactId>lombok</artifactId>
 			<version>${lombok.version}</version>
 			<optional>true</optional>
 		</dependency>
-		<dependency>
-			<groupId>org.jspecify</groupId>
-			<artifactId>jspecify</artifactId>
-			<version>1.0.0</version>
-		</dependency>
-		<dependency>
-			<groupId>org.flywaydb</groupId>
-			<artifactId>flyway-database-postgresql</artifactId>
-		</dependency>
+                <!-- JSpecify: @Nullable annotations -->
+                <dependency>
+                        <groupId>org.jspecify</groupId>
+                        <artifactId>jspecify</artifactId>
+                        <version>1.0.0</version>
+                </dependency>
+                <!-- Actuator: health, info, and metrics endpoints -->
+                <dependency>
+                        <groupId>org.springframework.boot</groupId>
+                        <artifactId>spring-boot-starter-actuator</artifactId>
+                </dependency>
 
-		<dependency>
-			<groupId>org.postgresql</groupId>
-			<artifactId>postgresql</artifactId>
-			<scope>runtime</scope>
-		</dependency>
+		<!-- Test: JUnit 5, AssertJ, Mockito, spring-test (MockRestServiceServer), @SpringBootTest -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-batch-jdbc-test</artifactId>
+			<artifactId>spring-boot-starter-test</artifactId>
 			<scope>test</scope>
 		</dependency>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-batch-test</artifactId>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-flyway-test</artifactId>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-jdbc-test</artifactId>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-webmvc-test</artifactId>
-			<scope>test</scope>
-		</dependency>
+		<!-- Testcontainers JUnit 5 integration -->
 		<dependency>
 			<groupId>org.testcontainers</groupId>
 			<artifactId>junit-jupiter</artifactId>
 			<version>${testcontainers.version}</version>
 			<scope>test</scope>
 		</dependency>
-		<dependency>
-			<groupId>org.testcontainers</groupId>
-			<artifactId>postgresql</artifactId>
-			<version>${testcontainers.version}</version>
-			<scope>test</scope>
-		</dependency>
+                <!-- Testcontainers PostgreSQL module -->
+                <dependency>
+                        <groupId>org.testcontainers</groupId>
+                        <artifactId>postgresql</artifactId>
+                        <version>${testcontainers.version}</version>
+                        <scope>test</scope>
+                </dependency>
+                <!-- Testcontainers Toxiproxy: network chaos / fault injection in tests -->
+                <dependency>
+                        <groupId>org.testcontainers</groupId>
+                        <artifactId>toxiproxy</artifactId>
+                        <version>${testcontainers.version}</version>
+                        <scope>test</scope>
+                </dependency>
+                <!-- WireMock: HTTP server stub for chaos and receiver tests (Jetty 12 / Java 21+) -->
+                <dependency>
+                        <groupId>org.wiremock</groupId>
+                        <artifactId>wiremock-standalone</artifactId>
+                        <version>3.9.2</version>
+                        <scope>test</scope>
+                </dependency>
+                <!-- Testcontainers k3s: lightweight K8s cluster for deployment tests -->
+                <dependency>
+                        <groupId>org.testcontainers</groupId>
+                        <artifactId>k3s</artifactId>
+                        <version>${testcontainers.version}</version>
+                        <scope>test</scope>
+                </dependency>
+                <!-- Awaitility: fluent async assertions used in Kubernetes deployment tests -->
+                <dependency>
+                        <groupId>org.awaitility</groupId>
+                        <artifactId>awaitility</artifactId>
+                        <scope>test</scope>
+                </dependency>
+                <!-- Fabric8 Kubernetes Client: apply manifests and assert cluster state -->
+                <dependency>
+                        <groupId>io.fabric8</groupId>
+                        <artifactId>kubernetes-client</artifactId>
+                        <version>7.2.0</version>
+                        <scope>test</scope>
+                </dependency>
+		<!-- Cucumber BDD: step definitions and feature file runner -->
 		<dependency>
 			<groupId>io.cucumber</groupId>
 			<artifactId>cucumber-java</artifactId>
@@ -153,26 +153,40 @@
 	</dependencies>
 
 	<build>
-		<plugins>
-			<plugin>
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-compiler-plugin</artifactId>
-				<configuration>
-					<proc>full</proc>
-					<annotationProcessorPaths>
-						<path>
-							<groupId>org.projectlombok</groupId>
-							<artifactId>lombok</artifactId>
-							<version>${lombok.version}</version>
-						</path>
-					</annotationProcessorPaths>
-				</configuration>
-			</plugin>
-			<plugin>
-				<groupId>org.springframework.boot</groupId>
-				<artifactId>spring-boot-maven-plugin</artifactId>
-			</plugin>
-		</plugins>
+        <plugins>
+                        <plugin>
+                                <groupId>org.apache.maven.plugins</groupId>
+                                <artifactId>maven-compiler-plugin</artifactId>
+                                <configuration>
+                                        <proc>full</proc>
+                                        <annotationProcessorPaths>
+                                                <path>
+                                                        <groupId>org.projectlombok</groupId>
+                                                        <artifactId>lombok</artifactId>
+                                                        <version>${lombok.version}</version>
+                                                </path>
+                                        </annotationProcessorPaths>
+                                </configuration>
+                        </plugin>
+                        <plugin>
+                                <groupId>org.springframework.boot</groupId>
+                                <artifactId>spring-boot-maven-plugin</artifactId>
+                        </plugin>
+                        <!--
+                             Exclude heavyweight tests from the default `./mvnw test` run.
+                             E2E and Kubernetes tests must be activated via profiles.
+                        -->
+                        <plugin>
+                                <groupId>org.apache.maven.plugins</groupId>
+                                <artifactId>maven-surefire-plugin</artifactId>
+                                <configuration>
+                                        <excludes>
+                                                <exclude>**/e2e/**</exclude>
+                                                <exclude>**/kubernetes/**</exclude>
+                                        </excludes>
+                                </configuration>
+                        </plugin>
+                </plugins>
 	</build>
 
 	<profiles>
@@ -193,8 +207,92 @@
 			</build>
 		</profile>
 
-		<profile>
-			<id>e2e-tests</id>
+                <profile>
+                        <!--
+                             Kubernetes deployment tests using Testcontainers k3s.
+
+                             Prerequisites (handled by the profile automatically):
+                               1. Docker daemon must be running.
+                               2. The profile runs `package` first to produce the fat JAR.
+                               3. Then `docker build -t dlq-streaming:k8s-test .` is executed
+                                  via the exec-maven-plugin before the test phase.
+
+                             Usage:
+                               ./mvnw test -Pkubernetes-tests
+                        -->
+                        <id>kubernetes-tests</id>
+                        <build>
+                                <plugins>
+                                        <!-- Step 1: ensure the fat JAR is built -->
+                                        <plugin>
+                                                <groupId>org.apache.maven.plugins</groupId>
+                                                <artifactId>maven-surefire-plugin</artifactId>
+                                                <configuration>
+                                                        <includes>
+                                                                <include>**/kubernetes/**Test.java</include>
+                                                        </includes>
+                                                        <!-- Clear the main-build exclusion of **/kubernetes/**
+                                                             so this profile can run those tests. -->
+                                                        <excludes combine.self="override"/>
+                                                        <!-- JUnit 5 tag selector: only run @Tag("kubernetes") tests -->
+                                                        <groups>kubernetes</groups>
+                                                </configuration>
+                                        </plugin>
+                                        <!-- Step 2: build the Docker image before tests run -->
+                                        <plugin>
+                                                <groupId>org.codehaus.mojo</groupId>
+                                                <artifactId>exec-maven-plugin</artifactId>
+                                                <version>3.5.0</version>
+                                                <executions>
+                                                        <!-- Step 2a: prune dangling images from the PREVIOUS test run
+                                                             so stale <none>:<none> layers do not accumulate. -->
+                                                        <execution>
+                                                                <id>docker-prune-dangling-before-build</id>
+                                                                <phase>test-compile</phase>
+                                                                <goals>
+                                                                        <goal>exec</goal>
+                                                                </goals>
+                                                                <configuration>
+                                                                        <executable>docker</executable>
+                                                                        <arguments>
+                                                                                <argument>image</argument>
+                                                                                <argument>prune</argument>
+                                                                                <argument>-f</argument>
+                                                                        </arguments>
+                                                                        <!-- Pruning is best-effort; never fail the build. -->
+                                                                        <successCodes>
+                                                                                <successCode>0</successCode>
+                                                                                <successCode>1</successCode>
+                                                                        </successCodes>
+                                                                </configuration>
+                                                        </execution>
+                                                        <!-- Step 2b: build the test image (overwrites the previous tag). -->
+                                                        <execution>
+                                                                <id>docker-build-k8s-test-image</id>
+                                                                <phase>test-compile</phase>
+                                                                <goals>
+                                                                        <goal>exec</goal>
+                                                                </goals>
+                                                                <configuration>
+                                                                        <executable>docker</executable>
+                                                                        <arguments>
+                                                                                <argument>build</argument>
+                                                                                <argument>--build-arg</argument>
+                                                                                <argument>BUILDKIT_INLINE_CACHE=1</argument>
+                                                                                <argument>-t</argument>
+                                                                                <argument>dlq-streaming:k8s-test</argument>
+                                                                                <argument>.</argument>
+                                                                        </arguments>
+                                                                </configuration>
+                                                        </execution>
+                                                </executions>
+                                        </plugin>
+                                </plugins>
+                        </build>
+                </profile>
+
+                <profile>
+                        <id>e2e-tests</id>
 			<build>
 				<plugins>
 					<plugin>
