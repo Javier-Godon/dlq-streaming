@@ -1,0 +1,85 @@
+---
+# CronJob for Kubernetes deployment tests (k3s / default namespace).
+#
+# Purpose:
+#   Verifies that a Kubernetes CronJob can trigger the drain endpoint
+#   via POST http://dlq-streaming:8080/drain/trigger.  The test creates
+#   a manual Job from this CronJob's template (Pattern: "trigger now"),
+#   waits for it to complete, and asserts Job.status.succeeded == 1.
+#
+# Differences from the production CronJob (k8s/base/cronjob.yaml):
+#   - namespace: default   (test cluster uses no dedicated namespace)
+#   - schedule: "*/1 * * * *"  (not triggered automatically during the short test)
+#   - imagePullPolicy: Never   (curlimages/curl is loaded into k3s via docker save)
+#   - service URL: http://dlq-streaming.default:8080/drain/trigger
+#   - backoffLimit: 0          (fail fast; no silent K8s restart masking errors)
+#   - activeDeadlineSeconds: 60 (tests must not hang)
+#   - no API key env var       (test ConfigMap omits DLQ_DRAIN_API_KEY)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dlq-drain-trigger
+  namespace: default
+  labels:
+    app: dlq-streaming
+    app.kubernetes.io/component: cronjob
+spec:
+  schedule: "*/1 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 30
+
+  jobTemplate:
+    spec:
+      # No K8s-level retries — application handles its own retry logic.
+      backoffLimit: 0
+      # Kill the job after 60 s to prevent zombie jobs in the test cluster.
+      activeDeadlineSeconds: 60
+
+      template:
+        metadata:
+          labels:
+            app: dlq-streaming
+            app.kubernetes.io/component: cronjob-runner
+        spec:
+          automountServiceAccountToken: false
+          restartPolicy: Never
+
+          containers:
+            - name: trigger
+              image: curlimages/curl:8.14.1
+              # Never pull — loaded into k3s containerd via docker save + ctr import.
+              imagePullPolicy: Never
+              command:
+                - sh
+                - -c
+                - |
+                  set -e
+                  echo "[$(date -u +%FT%TZ)] Triggering DLQ drain..."
+                  RESPONSE=$(curl -sf \
+                    --max-time 30 \
+                    -X POST \
+                    -H "Content-Type: application/json" \
+                    http://dlq-streaming.default:8080/drain/trigger)
+                  echo "[$(date -u +%FT%TZ)] Drain response: ${RESPONSE}"
+                  # curl -sf exits non-zero on HTTP 4xx/5xx — this makes the Job fail
+                  # when the drain returns 503 (receiver failed), visible in k8s events.
+
+              resources:
+                requests:
+                  cpu: "10m"
+                  memory: "16Mi"
+                limits:
+                  cpu: "100m"
+                  memory: "32Mi"
+
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 65534   # nobody in curlimages/curl
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+

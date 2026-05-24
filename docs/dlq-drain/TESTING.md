@@ -15,7 +15,10 @@ The DLQ drain has both business-critical behavior and heavy operational behavior
 | Network chaos (Data Prepper) | `DataPrepperNetworkChaosTest` | Yes if Docker available | Toxiproxy + WireMock: connect timeout, read timeout, 503 retry, 400 no-retry, TCP reset |
 | Network chaos (PostgreSQL) | `PostgresNetworkChaosTest` | Yes if Docker available | Toxiproxy: DB connection drop, high latency — proving `socketTimeout` is mandatory |
 | BDD/acceptance | `DlqDrainCucumberTest` + `.feature` | Yes | Documents business behavior in Gherkin |
-| Kubernetes deployment | `KubernetesDeploymentTest` | No, `-Pkubernetes-tests` | Deploys to k3s via Testcontainers; proves health probes, drain trigger, security context |
+| Kubernetes deployment | `KubernetesDeploymentTest` (Orders 1–9) | No, `-Pkubernetes-tests` | Deploys to k3s; proves health probes, security context, resource limits |
+| Kubernetes operational | `KubernetesDeploymentTest` (Orders 10–16) | No, `-Pkubernetes-tests` | Exercises drain business behavior against the live cluster with real DB seeding |
+| Kubernetes CronJob | `KubernetesDeploymentTest` (Order 17) | No, `-Pkubernetes-tests` | Creates a manual Job from the CronJob template; verifies Job.status.succeeded==1 |
+| Kubernetes Data Prepper | `KubernetesDataPrepperTest` (Orders 1–4) | No, `-Pkubernetes-tests` | Deploys WireMock as mock Data Prepper; proves records forwarded with correct headers; 503 stops drain |
 | Real E2E | `DlqDrainDataPrepperOpenSearchE2E` | No, opt-in | Requires external PostgreSQL + Data Prepper + OpenSearch |
 | Large-volume simulation | `LargeVolumePostgresDrainSimulationE2E` | No, opt-in | Can insert and drain 1,000,000 PostgreSQL rows without Data Prepper/OpenSearch |
 
@@ -59,19 +62,62 @@ The `kubernetes-tests` Maven profile:
 2. Starts a k3s cluster (Testcontainers k3s — K8s 1.32 in Docker)
 3. Loads the image into k3s containerd
 4. Deploys PostgreSQL + dlq-streaming
-5. Runs 9 assertions (see `KubernetesDeploymentTest`)
-6. Tears down the cluster
+5. Runs 16 assertions — 9 deployment probes followed by 7 operational scenarios
+6. Tears down the cluster and removes the test image (`docker rmi dlq-streaming:k8s-test`)
 
-**What is asserted:**
-- Pod becomes Ready after startup probes pass
-- Liveness probe returns `{"status":"UP"}`
-- Readiness probe becomes healthy (requires `?socketTimeout=5` in JDBC URL)
-- `POST /drain/trigger` returns HTTP 200
-- Response body contains `claimedCount`, `storedCount`, etc.
-- Pod runs as UID 1001, `runAsNonRoot=true`, no privilege escalation
-- Resource limits are defined (prevents OOMKilled)
-- All three probes are configured
-- Pod has exactly one container
+**Deployment probes (Orders 1–9):**
+
+| # | Test | What it proves |
+|---|---|---|
+| 1 | Pod becomes Ready | Startup probes pass within timeout |
+| 2 | Liveness probe returns UP | `/actuator/health/liveness` is healthy |
+| 3 | Readiness probe becomes healthy | `?socketTimeout` in JDBC URL prevents hang |
+| 4 | `POST /drain/trigger` returns 200 | Drain endpoint is reachable and controller is registered |
+| 5 | Response body contains drain fields | `claimedCount`, `storedCount`, etc. are serialised |
+| 6 | Pod runs as UID 1001, non-root | Pod Security Standards compliance |
+| 7 | Resource requests and limits defined | Prevents OOMKilled |
+| 8 | Liveness, readiness, startup probes defined | All three probes present in deployment spec |
+| 9 | Exactly one container | No unexpected sidecars injected |
+
+**Operational scenarios (Orders 10–16):**
+
+These tests use a Fabric8 `LocalPortForward` tunnel (postgres pod port 5432 → dynamic local port)
+with a HikariCP datasource to seed and verify the `dlq.dead_letter_record` table directly from
+the test JVM, exercising full end-to-end flows against the running cluster.
+
+| # | Test | What it proves |
+|---|---|---|
+| 10 | Drain on empty table | Returns HTTP 200 with all counts = 0 |
+| 11 | Full drain cycle | Seeds 3 records; all claimed, stored, and deleted in one call |
+| 12 | Batch size enforcement | 15 records drain in exactly 2 runs (batch=10 from ConfigMap) |
+| 13 | Idempotency | 3 consecutive calls on empty table all return 200, 0 counts |
+| 14 | Concurrent drains | 2 parallel calls, total claimed = 10, zero double-processing (`SKIP LOCKED`) |
+| 15 | Prometheus metrics | `/actuator/prometheus` exports JVM, process, and HTTP server metrics |
+| 16 | Pod restart resilience | Kill pod, wait for replacement to be Ready, drain still works |
+
+**CronJob (Order 17):**
+
+| # | Test | What it proves |
+|---|---|---|
+| 17 | CronJob manual trigger | Creates a Job from the CronJob template; `Job.status.succeeded==1` after the curl command calls `/drain/trigger` |
+
+## Kubernetes Data Prepper tests
+
+`KubernetesDataPrepperTest` is a separate test class with its own isolated k3s cluster.
+It deploys a WireMock instance inside k3s as a **mock Data Prepper**, configures
+`DLQ_RECEIVER_TYPE=dataprepper`, and verifies the full HTTP receiver path against a real
+Kubernetes network.
+
+```bash
+./mvnw test -Pkubernetes-tests -Dtest='KubernetesDataPrepperTest'
+```
+
+| # | Test | What it proves |
+|---|---|---|
+| 1 | All 5 records forwarded and cleared | storedCount=5, deletedCount=5, WireMock received 5 POST /log/ingest calls |
+| 2 | Required headers sent | `X-Process-Id` and `Idempotency-Key` headers present and match process_id |
+| 3 | 503 stops drain | When WireMock returns 503, drain returns `stoppedBecauseReceiverFailed=true`, records remain in DB |
+| 4 | Idempotency with Data Prepper | Two consecutive drains: first processes 2 records, second finds 0 |
 
 ## Acceptance / BDD only
 
@@ -165,7 +211,22 @@ This test prints rows/sec when it completes.
 
 ## Current verified status
 
-Verified during implementation:
+Verified during the latest session:
+
+```bash
+./mvnw test                   # 46 unit/integration/BDD tests
+./mvnw test -Pkubernetes-tests  # 21 Kubernetes tests (17 deployment/operational + 4 Data Prepper)
+```
+
+The `kubernetes-tests` profile additionally verified:
+- Full drain cycle (3 records → claimed=3, stored=3, deleted=3, table empty)
+- Batch enforcement (15 records → 2 runs of 10 + 5)
+- Concurrent drain calls (`SKIP LOCKED` prevents double-processing)
+- Pod restart resilience (kill pod → replacement Ready → drain still works)
+- Prometheus metrics endpoint serving JVM + HTTP metrics
+- CronJob manual trigger (Job.status.succeeded==1 after curl POST /drain/trigger)
+- Data Prepper integration (5 records → WireMock received 5 POST /log/ingest with correct headers)
+- Data Prepper failure handling (503 → stoppedBecauseReceiverFailed=true, records remain in DB)
 
 ```bash
 ./mvnw test
@@ -183,5 +244,4 @@ The full `1000000`-row simulation was not run in this workspace to avoid a long-
 The real Data Prepper/OpenSearch E2E was not run with one million rows because this workspace does not provide an external Data Prepper/OpenSearch stack. The E2E profile was verified to discover those tests and skip them when the required environment is absent.
 
 Use the commands above to run the full one-million-row real E2E in an environment that has PostgreSQL, Data Prepper, and OpenSearch configured.
-
 

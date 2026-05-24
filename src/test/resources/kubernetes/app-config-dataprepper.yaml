@@ -1,0 +1,45 @@
+---
+# Application ConfigMap for the Data Prepper integration test.
+# Sets DLQ_RECEIVER_TYPE=dataprepper and points to mock-data-prepper (WireMock).
+# Used by the dlq-streaming-dp Deployment in KubernetesDataPrepperTest.
+#
+# Differences from the default test ConfigMap (app-config.yaml):
+#   - DLQ_RECEIVER_TYPE: dataprepper  (real HTTP receiver path)
+#   - DLQ_DATA_PREPPER_URL: mock-data-prepper service in the cluster
+#   - Shorter timeouts and fewer retries for faster test feedback
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dlq-streaming-config-dp
+  namespace: default
+  labels:
+    app: dlq-streaming-dp
+data:
+  # ── Receiver ──────────────────────────────────────────────────────────────
+  DLQ_RECEIVER_TYPE: "dataprepper"
+
+  # WireMock service URL — port 2021 matches the Data Prepper default.
+  # The service name resolves inside the k3s cluster as
+  # mock-data-prepper.default.svc.cluster.local.
+  DLQ_DATA_PREPPER_URL: "http://mock-data-prepper.default:2021/log/ingest"
+
+  # ── HTTP client timeouts (shorter than production for faster test failure) ──
+  DLQ_DP_CONNECT_TIMEOUT_MS: "3000"
+  DLQ_DP_READ_TIMEOUT_MS: "10000"
+
+  # ── Retry policy (2 attempts = 1 initial + 1 retry, faster than production) ──
+  DLQ_DP_MAX_RETRY_ATTEMPTS: "2"
+  DLQ_DP_RETRY_INITIAL_DELAY_MS: "200"
+  DLQ_DP_RETRY_MULTIPLIER: "2.0"
+
+  # ── Drain parameters ──────────────────────────────────────────────────────
+  DLQ_BATCH_SIZE: "10"
+  DLQ_WORKER_ID: "k8s-test-dp"
+  DLQ_LEASE_SECONDS: "30"
+  DLQ_RELEASE_EXPIRED_LEASES: "true"
+
+  # ── Server ────────────────────────────────────────────────────────────────
+  SERVER_PORT: "8080"
+  MANAGEMENT_PORT: "8081"
+  MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,metrics,prometheus,mappings,beans"
+

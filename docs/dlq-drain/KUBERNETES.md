@@ -21,13 +21,14 @@ dlq-streaming Deployment
 
 ## Docker image
 
-The image is built with a **multi-stage Dockerfile**:
+The image is built with a **multi-stage Dockerfile**. Full documentation: [`docs/DOCKERFILE.md`](../DOCKERFILE.md).
 
 | Stage | Base | Purpose |
 |---|---|---|
-| `builder` | `eclipse-temurin:25-jdk-alpine` | Compile with Maven, produce fat JAR |
-| `extractor` | `eclipse-temurin:25-jre-alpine` | Extract Spring Boot layers |
-| `runtime` | `eclipse-temurin:25-jre-alpine` | Minimal layered runtime image |
+| `builder` | `eclipse-temurin:25-jdk-alpine` | Compile with Maven, extract Spring Boot layers, produce custom JRE via `jlink` |
+| `runtime` | `alpine:3.21` | Copy only the jlink JRE (~65 MB) + 4 Spring Boot layers. No full JRE image. |
+
+**Resulting image size**: ~160–200 MB (vs. ~300 MB with `eclipse-temurin:25-jre-alpine` base).
 
 ### Build
 
@@ -37,16 +38,16 @@ docker build -t dlq-streaming:latest .
 
 # Quick build (uses pre-built jar — good for local iteration):
 ./mvnw package -DskipTests
-docker build -t dlq-streaming:latest .
+docker build -t dlq-streaming:local .
 ```
 
 ### Image characteristics
 
-- **Base**: `eclipse-temurin:25-jre-alpine` (~180 MB)
-- **Non-root user**: UID 1001 (`appuser`)
+- **Base**: `alpine:3.21` (~7 MB) + custom jlink JRE (~65 MB)
+- **Non-root user**: UID 1001 (`appuser`) — TDD-proven by `KubernetesDeploymentTest.podRunsAsNonRoot()`
 - **Read-only root filesystem**: temporary files go to an `emptyDir` volume at `/tmp`
 - **JVM flags**: container-aware heap (`-XX:+UseContainerSupport -XX:MaxRAMPercentage=75`),
-  ZGC (`-XX:+UseZGC -XX:+ZGenerational`)
+  ZGC (`-XX:+UseZGC`, generational by default in Java 24+)
 - **Spring Boot layered extraction**: Docker cache reuses stable dependency layers across builds
 
 ---
@@ -177,10 +178,10 @@ The drain endpoint returns:
 
 ## Kubernetes deployment tests
 
-Deployment behaviour is verified by `KubernetesDeploymentTest` using **Testcontainers k3s** —
+Deployment behaviour is verified by two test classes using **Testcontainers k3s** —
 a lightweight Kubernetes cluster running in a Docker container.
 
-### What is tested
+### `KubernetesDeploymentTest` — deployment + operational + CronJob
 
 | Test | Validates |
 |---|---|
@@ -193,21 +194,29 @@ a lightweight Kubernetes cluster running in a Docker container.
 | `deploymentDefinesResourceRequestsAndLimits` | Resource governance prevents OOMKilled |
 | `deploymentDefinesHealthProbes` | All three probes are configured |
 | `podHasExactlyOneContainer` | No unexpected sidecars injected |
+| Orders 10–16 | Operational: empty table, 3-record drain, batch sizing, idempotency, concurrent SKIP LOCKED, Prometheus metrics, pod restart resilience |
+| `cronJobJobCompletesSuccessfully` | Creates a manual Job from the CronJob template; verifies `Job.status.succeeded==1` |
+
+### `KubernetesDataPrepperTest` — mock Data Prepper integration
+
+| Test | Validates |
+|---|---|
+| `drainWithDataPrepperForwardsAllRecordsAndClearsTable` | 5 records forwarded to WireMock (mock Data Prepper); DB empty; WireMock received 5 POST calls |
+| `drainSendsRequiredHeadersToDataPrepper` | `X-Process-Id` and `Idempotency-Key` headers sent with correct `process_id` value |
+| `drainStopsWhenDataPrepperReturns503` | WireMock configured to return 503; drain returns `stoppedBecauseReceiverFailed=true`; records remain in DB |
+| `drainIsIdempotentWithDataPrepper` | Two consecutive drains: first processes 2; second finds 0 |
 
 ### Running
 
 ```bash
-# Prerequisites: Docker daemon running, no pre-existing dlq-streaming:k8s-test image needed.
+# Run all kubernetes tests (builds Docker image first):
 ./mvnw test -Pkubernetes-tests
 
-# The profile automatically:
-#   1. Compiles the project
-#   2. docker build -t dlq-streaming:k8s-test .
-#   3. Starts k3s via Testcontainers
-#   4. Loads the image into k3s containerd
-#   5. Deploys PostgreSQL + dlq-streaming
-#   6. Runs all 9 assertions
-#   7. Destroys the k3s cluster
+# Run only deployment + operational + CronJob tests:
+./mvnw test -Pkubernetes-tests -Dtest='KubernetesDeploymentTest'
+
+# Run only Data Prepper integration tests:
+./mvnw test -Pkubernetes-tests -Dtest='KubernetesDataPrepperTest'
 ```
 
 ### TDD findings from deployment tests
@@ -218,6 +227,8 @@ a lightweight Kubernetes cluster running in a Docker container.
 | Image must run as UID 1001 | `podRunsAsNonRoot` | `adduser -S -u 1001` in Dockerfile |
 | Resource limits prevent OOMKilled | `deploymentDefinesResourceRequestsAndLimits` | `256Mi` limit in `app-deployment.yaml` |
 | Read-only root filesystem requires `/tmp` volume | `podRunsAsNonRoot` | `emptyDir` for `/tmp` in deployment |
+| CronJob curl exit code maps to Job failure | `cronJobJobCompletesSuccessfully` | `curl -sf` (`--fail`) causes non-zero exit on 4xx/5xx, making the K8s Job fail visibly |
+| `X-Process-Id` header transmits process_id | `drainSendsRequiredHeadersToDataPrepper` | `DataPrepperDeadLetterReceiver` sets `X-Process-Id: processId.value()` |
 
 ---
 

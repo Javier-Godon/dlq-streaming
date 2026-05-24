@@ -1,0 +1,128 @@
+---
+# Mock Data Prepper — WireMock standalone HTTP stub server.
+#
+# Purpose:
+#   Simulates the Data Prepper HTTP ingest endpoint (POST /log/ingest).
+#   Used by KubernetesDataPrepperTest to verify that the dlq-streaming
+#   application, when configured with DLQ_RECEIVER_TYPE=dataprepper,
+#   forwards records to Data Prepper and deletes them only after a
+#   successful response.
+#
+# Architecture:
+#   WireMock listens on port 8080 inside the pod.
+#   The Kubernetes Service maps port 2021 -> 8080, matching the default
+#   Data Prepper ingest port so environment variables need no special offset.
+#
+#   dlq-streaming-dp App
+#     |  POST http://mock-data-prepper.default:2021/log/ingest
+#     v
+#   mock-data-prepper Service (port 2021 -> pod 8080)
+#     |
+#     v
+#   WireMock Pod (port 8080)
+#
+# Stubs are loaded via the WireMock admin API after startup
+# (see KubernetesDataPrepperTest.loadDefaultWireMockStub()).
+# This avoids a read-only ConfigMap mount conflict with WireMock's
+# runtime stub file management.
+#
+# Admin API (for test verification):
+#   Accessible via Fabric8 LocalPortForward to the pod at port 8080.
+#   POST /__admin/requests/count — count matching requests.
+#   GET  /__admin/requests       — get recorded request details.
+#   POST /__admin/mappings       — add a new stub mapping.
+#   POST /__admin/mappings/reset — reset stubs to initial state.
+#   POST /__admin/requests/reset — clear the request journal.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-data-prepper
+  namespace: default
+  labels:
+    app: mock-data-prepper
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mock-data-prepper
+  template:
+    metadata:
+      labels:
+        app: mock-data-prepper
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: wiremock
+          image: wiremock/wiremock:3.13.0
+          imagePullPolicy: IfNotPresent
+          # --port 8080 (default)
+          # --verbose: log every request/response for diagnostics
+          # --disable-banner: reduce noise in pod logs
+          args:
+            - "--port"
+            - "8080"
+            - "--verbose"
+            - "--disable-banner"
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          # Readiness: WireMock admin API returns 200 for GET /__admin/mappings when ready.
+          readinessProbe:
+            httpGet:
+              path: /__admin/mappings
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 3
+            failureThreshold: 20
+            timeoutSeconds: 5
+          # Liveness: same endpoint.
+          livenessProbe:
+            httpGet:
+              path: /__admin/mappings
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          # WireMock runs as a non-root user (wiremock, UID varies by base image).
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          # WireMock writes runtime data to /home/wiremock — needs writable emptyDir.
+          volumeMounts:
+            - name: wiremock-data
+              mountPath: /home/wiremock
+      volumes:
+        - name: wiremock-data
+          emptyDir: {}
+---
+# Service — makes WireMock available as http://mock-data-prepper.default:2021
+# inside the cluster.  Port 2021 matches the Data Prepper default ingest port
+# so DLQ_DATA_PREPPER_URL points to the expected port number.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mock-data-prepper
+  namespace: default
+  labels:
+    app: mock-data-prepper
+spec:
+  type: ClusterIP
+  selector:
+    app: mock-data-prepper
+  ports:
+    - name: http
+      port: 2021
+      targetPort: http
+      protocol: TCP
+

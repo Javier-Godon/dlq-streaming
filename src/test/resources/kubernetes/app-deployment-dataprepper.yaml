@@ -1,0 +1,118 @@
+---
+# Application Deployment for the Data Prepper integration test.
+#
+# This is a SEPARATE deployment (name: dlq-streaming-dp, labels: app: dlq-streaming-dp)
+# that runs alongside the standard test deployment (name: dlq-streaming).
+# The separation prevents reconfiguring the running deployment mid-test and
+# ensures the 16 operational tests in KubernetesDeploymentTest are unaffected.
+#
+# Uses:
+#   - dlq-streaming-config-dp ConfigMap (DLQ_RECEIVER_TYPE=dataprepper)
+#   - dlq-streaming-secret       Secret  (same DB credentials)
+#   - dlq-streaming:k8s-test     Image   (same app image, different config)
+#
+# Access from test JVM:
+#   KubernetesDataPrepperTest uses Fabric8 LocalPortForward to the pod at
+#   port 8080 instead of a NodePort, avoiding extra exposed ports on the
+#   K3sContainer.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dlq-streaming-dp
+  namespace: default
+  labels:
+    app: dlq-streaming-dp
+    app.kubernetes.io/name: dlq-streaming-dp
+    app.kubernetes.io/component: app-dataprepper
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dlq-streaming-dp
+  template:
+    metadata:
+      labels:
+        app: dlq-streaming-dp
+        app.kubernetes.io/name: dlq-streaming-dp
+        app.kubernetes.io/component: app-dataprepper
+    spec:
+      automountServiceAccountToken: false
+
+      containers:
+        - name: dlq-streaming
+          image: dlq-streaming:k8s-test
+          # Never pull — loaded into k3s containerd via docker save + ctr import.
+          imagePullPolicy: Never
+
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: management
+              containerPort: 8081
+
+          envFrom:
+            - configMapRef:
+                name: dlq-streaming-config-dp
+            - secretRef:
+                name: dlq-streaming-secret
+
+          # Override JVM flags for test environment (G1GC, lower heap % vs. production ZGC).
+          env:
+            - name: JAVA_TOOL_OPTIONS
+              value: >-
+                -XX:+UseContainerSupport
+                -XX:MaxRAMPercentage=50
+                -XX:+UseG1GC
+                -Djava.security.egd=file:/dev/./urandom
+
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: management
+            failureThreshold: 18
+            periodSeconds: 5
+
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: management
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 5
+
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: management
+            periodSeconds: 5
+            failureThreshold: 3
+            timeoutSeconds: 5
+
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "192Mi"
+            limits:
+              cpu: "500m"
+              memory: "384Mi"
+
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            runAsGroup: 1001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: tmp
+          emptyDir: {}
+
+      terminationGracePeriodSeconds: 10
+
