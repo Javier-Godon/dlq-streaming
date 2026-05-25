@@ -34,7 +34,16 @@ data:
 
   # ── Drain parameters (read by TriggerDrainController) ────────────────────
   DLQ_BATCH_SIZE: "500"
-  DLQ_WORKER_ID: "dlq-drain-worker"
+  # DLQ_WORKER_ID is intentionally absent from the ConfigMap.
+  # It is injected dynamically via the Kubernetes Downward API in the Deployment:
+  #   env:
+  #     - name: DLQ_WORKER_ID
+  #       valueFrom:
+  #         fieldRef:
+  #           fieldPath: metadata.name
+  # This gives each pod its own unique pod name as worker ID, which is stored in
+  # the claimed_by column of dead_letter_record so lease ownership is unambiguous
+  # even when multiple replicas run concurrently.
   DLQ_LEASE_SECONDS: "120"
   DLQ_RELEASE_EXPIRED_LEASES: "true"
 

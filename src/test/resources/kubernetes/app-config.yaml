@@ -11,7 +11,8 @@ metadata:
 data:
   DLQ_RECEIVER_TYPE: "in-memory"
   DLQ_BATCH_SIZE: "10"
-  DLQ_WORKER_ID: "k8s-test"
+  # DLQ_WORKER_ID is injected via the Kubernetes Downward API in app-deployment.yaml
+  # (env[].valueFrom.fieldRef.fieldPath: metadata.name) — NOT a static ConfigMap value.
   DLQ_LEASE_SECONDS: "30"
   SERVER_PORT: "8080"
   MANAGEMENT_PORT: "8081"

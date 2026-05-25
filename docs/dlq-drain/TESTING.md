@@ -19,6 +19,7 @@ The DLQ drain has both business-critical behavior and heavy operational behavior
 | Kubernetes deployment | `KubernetesDeploymentTest` (Orders 1–9) | No, `-Pkubernetes-tests` | Deploys to k3s; proves health probes, security context, resource limits |
 | Kubernetes operational | `KubernetesDeploymentTest` (Orders 10–16) | No, `-Pkubernetes-tests` | Exercises drain business behavior against the live cluster with real DB seeding |
 | Kubernetes CronJob | `KubernetesDeploymentTest` (Order 17) | No, `-Pkubernetes-tests` | Creates a manual Job from the CronJob template; verifies Job.status.succeeded==1 |
+| Kubernetes Downward API | `KubernetesDeploymentTest` (Orders 18–19) | No, `-Pkubernetes-tests` | Proves `DLQ_WORKER_ID` is wired from pod name: structural (manifest) + runtime (exec printenv) |
 | Kubernetes Data Prepper | `KubernetesDataPrepperTest` (Orders 1–4) | No, `-Pkubernetes-tests` | Deploys WireMock as mock Data Prepper; proves records forwarded with correct headers; 503 stops drain |
 | Real E2E | `DlqDrainDataPrepperOpenSearchE2E` | No, opt-in | Requires external PostgreSQL + Data Prepper + OpenSearch |
 | Large-volume simulation | `LargeVolumePostgresDrainSimulationE2E` | No, opt-in | Can insert and drain 1,000,000 PostgreSQL rows without Data Prepper/OpenSearch |
@@ -63,7 +64,7 @@ The `kubernetes-tests` Maven profile:
 2. Starts a k3s cluster (Testcontainers k3s — K8s 1.32 in Docker)
 3. Loads the image into k3s containerd
 4. Deploys PostgreSQL + dlq-streaming
-5. Runs 16 assertions — 9 deployment probes followed by 7 operational scenarios
+5. Runs 19 assertions — 9 deployment probes, 7 operational scenarios, 1 CronJob, 2 Downward API wiring tests
 6. Tears down the cluster and removes the test image (`docker rmi dlq-streaming:k8s-test`)
 
 **Deployment probes (Orders 1–9):**
@@ -101,6 +102,19 @@ the test JVM, exercising full end-to-end flows against the running cluster.
 | # | Test | What it proves |
 |---|---|---|
 | 17 | CronJob manual trigger | Creates a Job from the CronJob template; `Job.status.succeeded==1` after the curl command calls `/drain/trigger` |
+
+**Downward API wiring (Orders 18–19):**
+
+| # | Test | What it proves |
+|---|---|---|
+| 18 | `deploymentInjectsDlqWorkerIdFromPodNameViaDownwardApi` | Deployment manifest has `DLQ_WORKER_ID` declared with `valueFrom.fieldRef.fieldPath=metadata.name` — not a static ConfigMap value |
+| 19 | `runningPodHasDlqWorkerIdEqualToPodName` | `printenv DLQ_WORKER_ID` inside the live container returns the exact Kubernetes pod name |
+
+> **Why this matters**: `DLQ_WORKER_ID` is stored as `claimed_by` in `dead_letter_record`.
+> The DELETE SQL is `WHERE claimed_by = :workerId`, so two replicas sharing a static
+> worker ID would corrupt each other's lease ownership.  The Downward API makes each
+> pod self-identify with its unique Kubernetes name.  Order 18 is a structural (manifest)
+> assertion; Order 19 is the runtime proof that Kubernetes actually resolved the value.
 
 ## Kubernetes Data Prepper tests
 
@@ -222,7 +236,7 @@ Verified during the latest session:
 
 ```bash
 ./mvnw test                    # 227 unit/integration/BDD/chaos/Spring-context tests — BUILD SUCCESS
-./mvnw test -Pkubernetes-tests # 21 Kubernetes tests (17 deployment/operational + 4 Data Prepper) — BUILD SUCCESS
+./mvnw test -Pkubernetes-tests # 23 Kubernetes tests (19 KubernetesDeploymentTest + 4 KubernetesDataPrepperTest) — BUILD SUCCESS
 ./mvnw verify -Pe2e-tests      # 227 unit tests + 3 E2E tests (2 skipped, 1 skipped — no external stack) — BUILD SUCCESS
 ```
 
@@ -234,6 +248,7 @@ Verified during the latest session:
 | WireMock 3.x fix | `KubernetesDataPrepperTest.resetWireMockState()` was calling `POST /__admin/requests/reset` which returns 404 in WireMock 3.x. Fixed to use `DELETE /__admin/requests` (the correct 3.x API). |
 | Auto-build Docker image | Both `KubernetesDeploymentTest` and `KubernetesDataPrepperTest` now auto-build `dlq-streaming:k8s-test` from the Dockerfile when the image is not found locally, rather than failing with an `IllegalStateException`. This makes the test suite self-contained: the previous test's `@AfterAll` deletes the image, and the next test class rebuilds it. |
 | E2E profile scoping | The `e2e-tests` Maven profile Surefire configuration now also excludes `**/kubernetes/**` tests from the normal surefire run, preventing Kubernetes tests from running during `./mvnw verify -Pe2e-tests` (which was causing 5+ minute unintended runs). |
+| **Downward API wiring** | `DLQ_WORKER_ID` removed from ConfigMaps (production `k8s/base/configmap.yaml` and all test ConfigMaps). Both production Deployment (`k8s/base/deployment.yaml`) and test Deployments now inject it via `valueFrom.fieldRef.fieldPath: metadata.name` so each pod uses its Kubernetes pod name as its DB worker identity. Two new Kubernetes tests added: Order 18 (structural: manifest uses Downward API) and Order 19 (runtime: `printenv DLQ_WORKER_ID` inside the live container equals the pod name). |
 
 ### Default test breakdown
 
@@ -269,6 +284,7 @@ The `kubernetes-tests` profile additionally verified:
 - CronJob manual trigger (Job.status.succeeded==1 after curl POST /drain/trigger)
 - Data Prepper integration (5 records → WireMock received 5 POST /log/ingest with correct headers)
 - Data Prepper failure handling (503 → stoppedBecauseReceiverFailed=true, records remain in DB)
+- **Downward API wiring** — `DLQ_WORKER_ID` injected from `metadata.name`; runtime value equals the actual pod name (Orders 18–19)
 
 ```bash
 ./mvnw test

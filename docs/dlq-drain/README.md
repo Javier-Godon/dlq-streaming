@@ -115,11 +115,50 @@ spec:
 | `DLQ_DP_RETRY_INITIAL_DELAY_MS` | `500` | Initial back-off delay (ms) |
 | `DLQ_DP_RETRY_MULTIPLIER` | `2.0` | Exponential back-off multiplier |
 | `DLQ_BATCH_SIZE` | `100` | Records per drain run |
-| `DLQ_WORKER_ID` | `dlq-drain-worker` | Worker identifier (use pod name for traceability) |
+| `DLQ_WORKER_ID` | `dlq-drain-worker` | **Unique worker identity per pod** — must differ across replicas; in Kubernetes inject via Downward API (see below) |
 | `DLQ_LEASE_SECONDS` | `120` | Claim lease TTL in seconds |
 | `DLQ_RELEASE_EXPIRED_LEASES` | `true` | Release expired leases at run start |
 | `SERVER_PORT` | `8080` | Main HTTP port (drain trigger endpoint) |
 | `MANAGEMENT_PORT` | `8081` | Actuator port (health, metrics, prometheus) |
+
+### Dynamic wiring of `DLQ_WORKER_ID` in Kubernetes
+
+`DLQ_WORKER_ID` is stored as `claimed_by` in the `dead_letter_record` table.  The drain
+delete SQL is:
+
+```sql
+DELETE FROM dlq.dead_letter_record
+ WHERE process_id = :processId
+   AND claimed_by = :workerId
+```
+
+If two replicas share the same static worker ID, one pod can accidentally delete records
+claimed by the other.  Each pod **must** have a unique identity.
+
+**Do not put `DLQ_WORKER_ID` in the ConfigMap.**  Inject it from the pod name via the
+[Kubernetes Downward API](https://kubernetes.io/docs/concepts/workloads/pods/downward-api/):
+
+```yaml
+# In the Deployment container spec — NOT in the ConfigMap
+env:
+  - name: DLQ_WORKER_ID
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.name   # resolves to the pod name before container start
+```
+
+This is verified by two tests in `KubernetesDeploymentTest`:
+
+| Order | Test | What it proves |
+|---|---|---|
+| 18 | `deploymentInjectsDlqWorkerIdFromPodNameViaDownwardApi` | Deployment spec has `DLQ_WORKER_ID` wired as `valueFrom.fieldRef.fieldPath=metadata.name` (structural) |
+| 19 | `runningPodHasDlqWorkerIdEqualToPodName` | `printenv DLQ_WORKER_ID` inside the running container equals the actual pod name (runtime) |
+
+Run them with:
+
+```bash
+./mvnw test -Pkubernetes-tests -Dtest='KubernetesDeploymentTest#deploymentInjectsDlqWorkerIdFromPodNameViaDownwardApi+runningPodHasDlqWorkerIdEqualToPodName'
+```
 
 ### Required datasource configuration
 
@@ -193,6 +232,8 @@ Protection is layered:
 | Chaos — Data Prepper | `DataPrepperNetworkChaosTest` | Timeout, reset, retry 503, bad request |
 | Chaos — PostgreSQL | `PostgresNetworkChaosTest` | DB connection drop, high latency |
 | BDD | `drain_dead_letters.feature` | End-to-end acceptance via Cucumber |
+| Kubernetes — deployment (Orders 1–17) | `KubernetesDeploymentTest` | Health probes, security, resources, operational drain, CronJob |
+| Kubernetes — Downward API (Orders 18–19) | `KubernetesDeploymentTest` | `DLQ_WORKER_ID` wired from pod name — structural + runtime proof |
 
 ---
 

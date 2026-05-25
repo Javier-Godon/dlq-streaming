@@ -10,6 +10,7 @@ import io.fabric8.kubernetes.client.Config;
 import io.fabric8.kubernetes.client.LocalPortForward;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClientBuilder;
+import io.fabric8.kubernetes.client.dsl.ExecWatch;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -30,8 +31,10 @@ import org.testcontainers.utility.MountableFile;
 
 import io.fabric8.kubernetes.api.model.batch.v1.JobBuilder;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -68,6 +71,9 @@ record DrainApiResponse(
  *   <li>The pod runs as a non-root user (Pod Security Standards compliance).</li>
  *   <li>The Deployment manifest defines resource requests and limits.</li>
  *   <li>Graceful shutdown: the pod terminates cleanly without errors.</li>
+ *   <li>The Deployment manifest wires {@code DLQ_WORKER_ID} from {@code metadata.name}
+ *       via the Kubernetes Downward API (not a static ConfigMap value).</li>
+ *   <li>The running pod has {@code DLQ_WORKER_ID} set to its own pod name at runtime.</li>
  * </ol>
  *
  * <h3>Infrastructure</h3>
@@ -110,6 +116,13 @@ record DrainApiResponse(
  *   <li>{@link #readinessProbeBecomesHealthyAfterDatabaseConnection()} proved that
  *       {@code socketTimeout} in the JDBC URL is required; without it the readiness
  *       probe hangs indefinitely when the DB is slow to start.</li>
+ *   <li>{@link #deploymentInjectsDlqWorkerIdFromPodNameViaDownwardApi()} enforces that
+ *       {@code DLQ_WORKER_ID} is sourced from {@code metadata.name} (Downward API),
+ *       not from a static ConfigMap value. This prevents two replicas from sharing
+ *       the same {@code claimed_by} identity in the dead-letter lease table.</li>
+ *   <li>{@link #runningPodHasDlqWorkerIdEqualToPodName()} proves the Downward API
+ *       wiring is correct at runtime: {@code printenv DLQ_WORKER_ID} inside the
+ *       container produces the actual Kubernetes pod name.</li>
  * </ul>
  */
 @Tag("kubernetes")
@@ -705,6 +718,122 @@ class KubernetesDeploymentTest {
                 });
 
         log.info("CronJob manual trigger Job '{}' completed successfully.", jobName);
+    }
+
+    @Test
+    @Order(18)
+    @DisplayName("Deployment wires DLQ_WORKER_ID from metadata.name via Kubernetes Downward API — not a static ConfigMap value")
+    void deploymentInjectsDlqWorkerIdFromPodNameViaDownwardApi() {
+        // WHAT this test proves:
+        //   The Deployment spec declares DLQ_WORKER_ID as a Downward API field reference
+        //   (valueFrom.fieldRef.fieldPath = "metadata.name"), NOT as a static string or
+        //   as a ConfigMap key.
+        //
+        // WHY this matters:
+        //   DLQ_WORKER_ID is stored as claimed_by in the dead_letter_record table.
+        //   If all replicas share the same static worker ID, the DELETE:
+        //     DELETE FROM dlq.dead_letter_record WHERE claimed_by = :workerId
+        //   can delete records claimed by a different replica, or a replica cannot
+        //   delete its own records if another replica overwrites the claimed_by field.
+        //   With Downward API, each pod is named uniquely by Kubernetes, so the lease
+        //   ownership is always unambiguous.
+        var deployment = k8sClient.apps().deployments()
+                .inNamespace("default")
+                .withName("dlq-streaming")
+                .get();
+
+        assertThat(deployment).as("Deployment must exist").isNotNull();
+
+        var container = deployment.getSpec().getTemplate().getSpec().getContainers().stream()
+                .filter(c -> "dlq-streaming".equals(c.getName()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Container 'dlq-streaming' not found in deployment spec"));
+
+        var dlqWorkerIdEnv = container.getEnv().stream()
+                .filter(e -> "DLQ_WORKER_ID".equals(e.getName()))
+                .findFirst()
+                .orElse(null);
+
+        assertThat(dlqWorkerIdEnv)
+                .as("DLQ_WORKER_ID env entry must be defined in the Deployment container spec")
+                .isNotNull();
+
+        assertThat(dlqWorkerIdEnv.getValue())
+                .as("DLQ_WORKER_ID must not be a static string — it must use valueFrom (Downward API)")
+                .isNullOrEmpty();
+
+        assertThat(dlqWorkerIdEnv.getValueFrom())
+                .as("DLQ_WORKER_ID must use valueFrom (Downward API), not a hard-coded value")
+                .isNotNull();
+
+        assertThat(dlqWorkerIdEnv.getValueFrom().getFieldRef())
+                .as("DLQ_WORKER_ID.valueFrom must reference a pod field (fieldRef)")
+                .isNotNull();
+
+        assertThat(dlqWorkerIdEnv.getValueFrom().getFieldRef().getFieldPath())
+                .as("DLQ_WORKER_ID must be sourced from metadata.name so each pod gets its own unique identity")
+                .isEqualTo("metadata.name");
+    }
+
+    @Test
+    @Order(19)
+    @DisplayName("Running pod has DLQ_WORKER_ID set to its own pod name at runtime (Downward API verified end-to-end)")
+    void runningPodHasDlqWorkerIdEqualToPodName() throws Exception {
+        // WHAT this test proves:
+        //   The Downward API wiring is correct end-to-end: the value that the JVM
+        //   sees for DLQ_WORKER_ID at runtime equals the actual Kubernetes pod name.
+        //   This is verified by exec-ing "printenv DLQ_WORKER_ID" inside the running
+        //   container and comparing it to the pod name returned by the Kubernetes API.
+        //
+        // HOW the Downward API works:
+        //   Kubernetes resolves fieldRef.fieldPath=metadata.name before starting the
+        //   container. The kubelet injects the resolved pod name into the container
+        //   environment at startup. The JVM reads this env var when Spring Boot starts
+        //   and binds it to dlq-drain.scheduler.worker-id via @ConfigurationProperties.
+        //
+        // WHY exec is used instead of the actuator /env endpoint:
+        //   exec reads the raw OS-level environment variable, bypassing Spring's
+        //   property relaxed-binding. This gives a lower-level, more direct proof
+        //   that the Kubernetes runtime injected the value, independent of Spring's
+        //   property source resolution.
+        var pods = k8sClient.pods()
+                .inNamespace("default")
+                .withLabel("app", "dlq-streaming")
+                .withLabel("app.kubernetes.io/component", "app")  // exclude cronjob-runner pods
+                .list()
+                .getItems()
+                .stream()
+                .filter(p -> "Running".equals(p.getStatus().getPhase()))
+                .toList();
+
+        assertThat(pods).as("At least one dlq-streaming app pod must be running").isNotEmpty();
+        var pod = pods.getFirst();
+        var podName = pod.getMetadata().getName();
+
+        log.info("Verifying DLQ_WORKER_ID in pod '{}' via exec...", podName);
+
+        var outputStream = new ByteArrayOutputStream();
+        try (ExecWatch exec = k8sClient.pods()
+                .inNamespace("default")
+                .withName(podName)
+                .inContainer("dlq-streaming")
+                .writingOutput(outputStream)
+                .exec("printenv", "DLQ_WORKER_ID")) {
+
+            // Wait for the exec to complete (printenv exits immediately).
+            Integer exitCode = exec.exitCode().get(10, TimeUnit.SECONDS);
+
+            assertThat(exitCode)
+                    .as("printenv DLQ_WORKER_ID must exit 0 (env var must be set in container)")
+                    .isZero();
+        }
+
+        String actualWorkerId = outputStream.toString(StandardCharsets.UTF_8).trim();
+        log.info("Pod '{}' has DLQ_WORKER_ID='{}'", podName, actualWorkerId);
+
+        assertThat(actualWorkerId)
+                .as("DLQ_WORKER_ID must equal the pod name '%s' — Downward API wiring is correct end-to-end", podName)
+                .isEqualTo(podName);
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────

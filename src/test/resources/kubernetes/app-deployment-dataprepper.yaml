@@ -57,6 +57,9 @@ spec:
                 name: dlq-streaming-secret
 
           # Override JVM flags for test environment (G1GC, lower heap % vs. production ZGC).
+          #
+          # DLQ_WORKER_ID is injected from metadata.name via the Downward API so
+          # the running pod uses its own pod name as the DB lease worker identity.
           env:
             - name: JAVA_TOOL_OPTIONS
               value: >-
@@ -64,6 +67,10 @@ spec:
                 -XX:MaxRAMPercentage=50
                 -XX:+UseG1GC
                 -Djava.security.egd=file:/dev/./urandom
+            - name: DLQ_WORKER_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
 
           startupProbe:
             httpGet:

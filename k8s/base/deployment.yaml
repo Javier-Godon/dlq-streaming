@@ -79,6 +79,17 @@ spec:
             - secretRef:
                 name: dlq-streaming-secret
 
+          # Per-pod variables that cannot be stored in a shared ConfigMap.
+          # DLQ_WORKER_ID is injected from metadata.name via the Downward API so
+          # every pod identifies itself uniquely in the claimed_by column of
+          # dead_letter_record. This is essential for correct lease ownership when
+          # multiple replicas run concurrently.
+          env:
+            - name: DLQ_WORKER_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+
           resources:
             requests:
               cpu: "100m"

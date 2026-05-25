@@ -49,6 +49,9 @@ spec:
           # when combined with native memory (off-heap). Use G1GC with lower
           # MaxRAMPercentage. This is intentionally simpler than production
           # ZGC config — the test verifies deployment behaviour, not GC policy.
+          #
+          # DLQ_WORKER_ID is injected from metadata.name via the Downward API so
+          # the running pod uses its own pod name as the DB lease worker identity.
           env:
             - name: JAVA_TOOL_OPTIONS
               value: >-
@@ -56,6 +59,10 @@ spec:
                 -XX:MaxRAMPercentage=50
                 -XX:+UseG1GC
                 -Djava.security.egd=file:/dev/./urandom
+            - name: DLQ_WORKER_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
 
           startupProbe:
             httpGet:
