@@ -1,8 +1,8 @@
 package es.bluesolution.dlq_streaming.functional_framework.execution;
 
 import es.bluesolution.dlq_streaming.functional_framework.Result;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.NullMarked;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -11,31 +11,37 @@ import java.util.function.Supplier;
 /**
  * SagaExecutionContext implements the Saga pattern for distributed transactions.
  *
- * A Saga is a sequence of operations where each operation has a corresponding compensation
+ * <p>A Saga is a sequence of operations where each operation has a corresponding compensation
  * (rollback) operation. If any operation fails, all previous compensations are executed
  * in reverse order to maintain consistency across multiple systems.
  *
- * This is particularly useful for operations that span multiple services (e.g., database + Keycloak):
+ * <p>This is particularly useful for operations that span multiple services (e.g., database + Keycloak):
  *
- * Flow:
- * 1. Execute operation 1 (persist to database)
- *    - Register compensation: undo database persist
- * 2. Execute operation 2 (update Keycloak)
- *    - Register compensation: undo Keycloak update
- * 3. If operation 2 fails → execute compensations in reverse:
- *    - Undo Keycloak update
- *    - Undo database persist
+ * <p>Flow:
+ * <ol>
+ *   <li>Execute operation 1 (persist to database) — register compensation: undo database persist</li>
+ *   <li>Execute operation 2 (update Keycloak) — register compensation: undo Keycloak update</li>
+ *   <li>If operation 2 fails → execute compensations in reverse:
+ *     <ul>
+ *       <li>Undo Keycloak update</li>
+ *       <li>Undo database persist</li>
+ *     </ul>
+ *   </li>
+ * </ol>
  *
- * Result: Strong consistency across distributed systems using functional composition.
+ * <p>Result: Strong consistency across distributed systems using functional composition.
  *
- * Integration with ExecutionContext:
- * - Implements ExecutionContext for compatibility
- * - Can be composed with other contexts (logging, metrics)
- * - Works with existing Result<T> monad pattern
- * - Requires aggregators to track compensations
+ * <p>Integration with ExecutionContext:
+ * <ul>
+ *   <li>Implements ExecutionContext for compatibility</li>
+ *   <li>Can be composed with other contexts (logging, metrics)</li>
+ *   <li>Works with existing Result&lt;T&gt; monad pattern</li>
+ *   <li>Requires aggregators to track compensations</li>
+ * </ul>
  *
  * @see SagaAggregator - Aggregator interface for tracking compensations
  */
+@NullMarked
 @Slf4j
 public class SagaExecutionContext implements ExecutionContext {
 
@@ -62,7 +68,7 @@ public class SagaExecutionContext implements ExecutionContext {
     /**
      * Execute a computation with compensation support.
      *
-     * The computation may register compensations that will be executed in
+     * <p>The computation may register compensations that will be executed in
      * reverse order if the overall saga fails.
      *
      * @param computation a supplier that may return Result.success() or Result.failure()
@@ -99,20 +105,20 @@ public class SagaExecutionContext implements ExecutionContext {
     /**
      * Register a compensation operation.
      *
-     * This is called by stages during execution to register what should happen
+     * <p>This is called by stages during execution to register what should happen
      * if the saga fails. Compensations are executed in reverse order (LIFO - Last In First Out).
      *
-     * According to ROP Golden Rule: compensations return meaningful output (IDs, aggregates),
-     * never Result<Void>. This maintains functional composition and traceability.
+     * <p>According to ROP Golden Rule: compensations return meaningful output (IDs, aggregates),
+     * never {@code Result<Void>}. This maintains functional composition and traceability.
      *
-     * Example usage in a stage:
+     * <p>Example usage in a stage:
      * <pre>
-     * public static Result<State> persist(State state, SagaExecutionContext context) {
+     * public static Result&lt;State&gt; persist(State state, SagaExecutionContext context) {
      *     var saved = repository.save(state.order());
      *
      *     // Register: if saga fails, re-create the deleted order
-     *     context.registerCompensation(() -> {
-     *         return repository.save(state.order());  // Returns Result<OrderId>
+     *     context.registerCompensation(() -&gt; {
+     *         return repository.save(state.order());  // Returns Result&lt;OrderId&gt;
      *     });
      *
      *     return Result.success(state.withOrder(saved));
@@ -129,7 +135,7 @@ public class SagaExecutionContext implements ExecutionContext {
     /**
      * Execute all registered compensations in reverse order.
      *
-     * Compensations are executed LIFO (Last In First Out) to properly unwind
+     * <p>Compensations are executed LIFO (Last In First Out) to properly unwind
      * the saga. If a compensation fails, remaining compensations still execute.
      */
     private void executeCompensations() {
@@ -153,31 +159,5 @@ public class SagaExecutionContext implements ExecutionContext {
         }
 
         log.debug("Completed executing {} compensations", toCompensate.size());
-    }
-
-    /**
-     * Create a SagaExecutionContext with database transaction support.
-     *
-     * This creates a saga that executes within a database transaction,
-     * making the saga atomic for database operations.
-     *
-     * @param txContext the transaction context to delegate to
-     * @return a new SagaExecutionContext
-     */
-    public static SagaExecutionContext withTransactions(ExecutionContext txContext) {
-        return new SagaExecutionContext(txContext);
-    }
-
-    /**
-     * Create a SagaExecutionContext with logging support.
-     *
-     * This creates a saga that logs all compensation execution.
-     *
-     * @param txContext the transaction context to delegate to
-     * @return a new SagaExecutionContext wrapped with logging
-     */
-    public static ExecutionContext withLogging(ExecutionContext txContext) {
-        SagaExecutionContext saga = new SagaExecutionContext(txContext);
-        return new LoggingExecutionContext(saga);
     }
 }

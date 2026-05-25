@@ -2,7 +2,6 @@ package es.bluesolution.dlq_streaming.dlq_drain.domain.model;
 
 import org.junit.jupiter.api.Test;
 
-import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

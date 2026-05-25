@@ -6,8 +6,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NullMarked;
 import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.TransactionStatus;
-import org.springframework.transaction.support.TransactionCallbackWithoutResult;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.Objects;
@@ -16,24 +14,26 @@ import java.util.function.Supplier;
 
 /**
  * Spring-backed transaction execution context.
- * 
- * This is how your framework applies transactional boundaries to pure Result pipelines.
- * It uses Spring's TransactionTemplate, which is the FP-idiomatic way (vs @Transactional annotations).
- * 
- * Design principles:
- * 1. The computation (pipeline) stays pure - no @Transactional needed
- * 2. Transaction management is injected at the execution boundary
- * 3. Rollback happens automatically if Result is a Failure
- * 4. Composition is possible: wrap with logging, caching, etc.
- * 
- * Usage:
- * 
- * @Service @RequiredArgsConstructor @Slf4j
+ *
+ * <p>This is how your framework applies transactional boundaries to pure Result pipelines.
+ * It uses Spring's TransactionTemplate, which is the FP-idiomatic way (vs {@code @Transactional} annotations).
+ *
+ * <p>Design principles:
+ * <ol>
+ *   <li>The computation (pipeline) stays pure - no {@code @Transactional} needed</li>
+ *   <li>Transaction management is injected at the execution boundary</li>
+ *   <li>Rollback happens automatically if Result is a Failure</li>
+ *   <li>Composition is possible: wrap with logging, caching, etc.</li>
+ * </ol>
+ *
+ * <p>Usage:
+ * <pre>
+ * {@code @Service @RequiredArgsConstructor @Slf4j}
  * public class CreateOrderHandler {
  *     private final CreateOrderAggregator aggregator;
  *     private final TransactionExecutionContext txContext;
  *
- *     public Result<Order> handle(CreateOrderCommand cmd) {
+ *     public Result&lt;Order&gt; handle(CreateOrderCommand cmd) {
  *         // Pure pipeline - no @Transactional!
  *         var pipeline = () -> aggregator.start()
  *             .flatMap(CreateOrderStages::validate)
@@ -43,13 +43,15 @@ import java.util.function.Supplier;
  *         return txContext.execute(pipeline);
  *     }
  * }
- * 
- * For conditional transactions:
- * 
- * Result<Order> result = isProduction 
- *     ? txContext.execute(pipeline) 
+ * </pre>
+ *
+ * <p>For conditional transactions:
+ * <pre>
+ * Result&lt;Order&gt; result = isProduction
+ *     ? txContext.execute(pipeline)
  *     : noOpContext.execute(pipeline);
- * 
+ * </pre>
+ *
  * @see ExecutionContext for the interface definition
  * @see NoOpExecutionContext for testing without transactions
  */
@@ -93,11 +95,11 @@ public class TransactionExecutionContext implements ExecutionContext {
 
     /**
      * Execute a Result-returning computation within a Spring transaction.
-     * 
-     * If the Result is a Failure, the transaction is rolled back.
+     *
+     * <p>If the Result is a Failure, the transaction is rolled back.
      * This preserves functional semantics: errors propagate as values (Results),
      * not as exceptions.
-     * 
+     *
      * @param computation a pure function that returns a Result
      * @param <T> the success value type
      * @return the Result exactly as returned by computation (success or failure)
@@ -129,10 +131,10 @@ public class TransactionExecutionContext implements ExecutionContext {
     
     /**
      * Execute with side effects for logging or auditing.
-     * 
-     * This allows you to add behavior at the transaction boundary without
+     *
+     * <p>This allows you to add behavior at the transaction boundary without
      * polluting the pure pipeline.
-     * 
+     *
      * @param computation the pure computation
      * @param beforeTx callback before transaction starts (for pre-flight checks)
      * @param afterTx callback after transaction completes (for logging/auditing)
